@@ -26,7 +26,7 @@ Starting in Build 42, Project Zomboid mods can execute compiled Java bytecode (`
 
 ## 🚀 Scan Profiles
 
-PZ-ModGuard features 4 selectable scan modes to fit your workflow:
+PZ-ModGuard features 5 selectable scan modes to fit your workflow:
 
 | Profile | Target Coverage | Typical Duration | Best For |
 | :--- | :--- | :--- | :--- |
@@ -34,6 +34,7 @@ PZ-ModGuard features 4 selectable scan modes to fit your workflow:
 | **`[2] Full Deep Scan`** | Base engine (`projectzomboid.jar`), Workshop, Loose overrides, Game root | **~6 seconds** | Initial setup or after installing engine-level mods |
 | **`[3] Base Engine Only`** | Dedicated `projectzomboid.jar` integrity audit & Game Root | **~4.5 seconds** | Verifying game engine integrity without scanning mods |
 | **`[4] Custom Target`** | Any specific mod folder or `.jar` file (supports drag-and-drop) | **< 1 second** | Testing an individual mod from NexusMods/Discord |
+| **`[5] Custom Game Dir`** | Point directly to any GOG, standalone, server, or custom folder | **~5 seconds** | GOG Galaxy, DRM-free copies, or dedicated servers |
 
 ---
 
@@ -41,10 +42,12 @@ PZ-ModGuard features 4 selectable scan modes to fit your workflow:
 
 * **⚡ Ultra-Fast Stream Engine:** Highly optimized stream reader processes thousands of compiled classes per second, completing full scans in seconds.
 * **🎮 Deep Base Engine Audit (`projectzomboid.jar`):** Audits all 23,800+ core game engine classes for trojans and backdoors without triggering false alarms on official engine code, while identifying 3rd-party injected mod packages (such as ZombieBuddy).
-* **🌐 Multi-Target Auto-Detection:** Automatically discovers and simultaneously scans across all:
-  * **Steam Workshop Mods** (`steamapps/workshop/content/108600`) across all drives (`C:`, `D:`, `E:`, external NVMe SSDs).
-  * **Main Game Directory** (`steamapps/common/ProjectZomboid`) to catch mods and DLLs installed directly into the game root.
-  * **Local User Mods** (`%USERPROFILE%/Zomboid/mods`) for manually installed mods.
+* **🌐 Universal Platform & GOG Support:** Full compatibility with:
+  * **Steam Workshop** (`steamapps/workshop/content/108600`) across all drives (`C:`, `D:`, `E:`, external NVMe SSDs).
+  * **GOG Galaxy & Standalone Installers** (`C:\GOG Games\Project Zomboid`, GOG registry keys, and custom drives).
+  * **Portable Drop-in Execution:** Running `PZ-ModGuard.bat` directly from inside any game folder instantly recognizes it as the game root.
+  * **Interactive Fallback:** Never crashes or aborts if installed in an unusual path—prompts for folder drag-and-drop.
+  * **Local User Mods** (`%USERPROFILE%/Zomboid/mods` and `<GameRoot>/mods`).
 * **⚙️ Launcher JSON Integrity Check:** Inspects `ProjectZomboid64.json` to verify that JVM agent arguments (`-agentlib:`, `-agentpath:`, `-javaagent:`) only reference trusted agents (like `zbNative`).
 * **🔬 High-Precision JVM Bytecode Parser:** Rather than naive byte-matching, PZ-ModGuard inspects the JVM class file format (`0xCAFEBABE`) in memory to extract true string literals, method descriptors, and class references.
 * **🎯 3-Tier Threat Engine:**

@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.4.0"
+title "Project Zomboid - Java and Binary Mod Guard v2.5.0"
 color 0F
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression ([System.IO.File]::ReadAllText('%~f0'))"
 echo.
@@ -16,7 +16,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.4.0                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.5.0                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
 
@@ -93,13 +93,20 @@ function Clear-ModProgressBar() {
     Write-Progress -Activity "Project Zomboid Mod Guard" -Completed
 }
 
-# 3. Multi-Target Path Discovery (Workshop, Main Game Root, and Local User Mods)
+# 3. Multi-Target Path Discovery (Workshop, Main Game Root, GOG, and Local User Mods)
 $targets = @{
     Workshop = [System.Collections.Generic.List[string]]::new()
     GameRoot = [System.Collections.Generic.List[string]]::new()
     UserMods = [System.Collections.Generic.List[string]]::new()
 }
 
+# 3.1. Portable Execution Check (Running directly inside a PZ installation directory)
+$currentDir = (Get-Location).Path
+if ((Test-Path "$currentDir\projectzomboid.jar") -or (Test-Path "$currentDir\ProjectZomboid64.exe")) {
+    if (-not $targets.GameRoot.Contains($currentDir)) { $targets.GameRoot.Add($currentDir) }
+}
+
+# 3.2. Steam Multi-Drive Library Auto-Discovery
 $steamPath = (Get-ItemProperty -Path "HKCU:\Software\Valve\Steam" -ErrorAction SilentlyContinue).SteamPath
 if (-not $steamPath) {
     $steamPath = (Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam" -ErrorAction SilentlyContinue).InstallPath
@@ -131,19 +138,80 @@ if ($libraryRoots.Count -eq 0) {
 
 foreach ($lib in $libraryRoots) {
     $ws = "$lib\steamapps\workshop\content\108600"
-    if (Test-Path $ws) { $targets.Workshop.Add($ws) }
+    if (Test-Path $ws) { if (-not $targets.Workshop.Contains($ws)) { $targets.Workshop.Add($ws) } }
     
     $gm = "$lib\steamapps\common\ProjectZomboid"
-    if (Test-Path $gm) { $targets.GameRoot.Add($gm) }
+    if (Test-Path $gm) { if (-not $targets.GameRoot.Contains($gm)) { $targets.GameRoot.Add($gm) } }
 }
 
-$um = "$env:USERPROFILE\Zomboid\mods"
-if (Test-Path $um) { $targets.UserMods.Add($um) }
+# 3.3. GOG Galaxy Registry & Standalone Auto-Discovery
+$gogRegs = @(
+    "HKLM:\SOFTWARE\GOG.com\Games\*",
+    "HKLM:\SOFTWARE\WOW6432Node\GOG.com\Games\*"
+)
+foreach ($reg in $gogRegs) {
+    Get-ItemProperty -Path $reg -ErrorAction SilentlyContinue | ForEach-Object {
+        $p = $_.PATH
+        if (-not $p) { $p = $_.gamePath }
+        if (-not $p) { $p = $_.InstallDir }
+        if ($p -and (Test-Path $p)) {
+            if ((Test-Path "$p\projectzomboid.jar") -or (Test-Path "$p\ProjectZomboid64.exe")) {
+                if (-not $targets.GameRoot.Contains($p)) { $targets.GameRoot.Add($p) }
+            }
+        }
+    }
+}
 
+$commonGogPaths = @(
+    "C:\GOG Games\Project Zomboid",
+    "D:\GOG Games\Project Zomboid",
+    "E:\GOG Games\Project Zomboid",
+    "C:\Program Files (x86)\GOG Galaxy\Games\Project Zomboid",
+    "D:\GOG Galaxy\Games\Project Zomboid",
+    "E:\GOG Galaxy\Games\Project Zomboid",
+    "C:\Games\Project Zomboid",
+    "D:\Games\Project Zomboid"
+)
+foreach ($p in $commonGogPaths) {
+    if (Test-Path $p) {
+        if ((Test-Path "$p\projectzomboid.jar") -or (Test-Path "$p\ProjectZomboid64.exe")) {
+            if (-not $targets.GameRoot.Contains($p)) { $targets.GameRoot.Add($p) }
+        }
+    }
+}
+
+# 3.4. Local User Mods (%USERPROFILE%\Zomboid\mods)
+$um = "$env:USERPROFILE\Zomboid\mods"
+if (Test-Path $um) { if (-not $targets.UserMods.Contains($um)) { $targets.UserMods.Add($um) } }
+
+# 3.5. In-Game Directory Mods (<GameRoot>\mods)
+foreach ($gm in $targets.GameRoot) {
+    $gmMods = "$gm\mods"
+    if ((Test-Path $gmMods) -and (-not $targets.UserMods.Contains($gmMods))) {
+        $targets.UserMods.Add($gmMods)
+    }
+}
+
+# 3.6. Interactive Fallback Prompt if Nothing Discovered (GOG / Non-Steam / Custom Drive)
 if ($targets.Workshop.Count -eq 0 -and $targets.GameRoot.Count -eq 0) {
-    Write-Host "`n[!] Could not locate Project Zomboid installation or workshop directory." -ForegroundColor Red
-    Write-Host "    Make sure Steam and Project Zomboid are installed." -ForegroundColor Yellow
-    return
+    Write-Host "`n[!] Could not automatically locate a Steam or GOG installation of Project Zomboid." -ForegroundColor Yellow
+    Write-Host "    You can manually specify your Project Zomboid directory (GOG, standalone, or custom drive)." -ForegroundColor Cyan
+    Write-Host ""
+    $fallbackInput = Read-Host "Enter path to Project Zomboid directory (or drag folder here, or [Q] to quit)"
+    if ($fallbackInput -match "^[Qq]" -or [string]::IsNullOrWhiteSpace($fallbackInput)) {
+        Write-Host "`nScan cancelled." -ForegroundColor Yellow
+        return
+    }
+    $cleanPath = $fallbackInput.Trim().Trim('"').Trim("'")
+    if (Test-Path $cleanPath) {
+        $targets.GameRoot.Add($cleanPath)
+        $gmMods = "$cleanPath\mods"
+        if (Test-Path $gmMods) { $targets.UserMods.Add($gmMods) }
+        Write-Host "  [+] Added Custom Game Directory: $cleanPath" -ForegroundColor Green
+    } else {
+        Write-Host "`n[!] Directory not found: $cleanPath" -ForegroundColor Red
+        return
+    }
 }
 
 # 4. Stock Engine Files & Whitelist Rules
@@ -362,10 +430,11 @@ Write-Host "  [1] Quick Scan      - Workshop & User Mods (Fastest, ~1.5s) [DEFAU
 Write-Host "  [2] Full Deep Scan  - Complete Audit (Base Engine + Workshop + Overrides)" -ForegroundColor White
 Write-Host "  [3] Base Engine     - projectzomboid.jar Integrity & Security Audit" -ForegroundColor White
 Write-Host "  [4] Custom Target   - Scan a specific Mod Folder or .JAR file" -ForegroundColor White
+Write-Host "  [5] Custom Game Dir - Point to a GOG / Standalone / Custom PZ Folder" -ForegroundColor White
 Write-Host "  [Q] Quit / Cancel" -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host ""
-$prompt = Read-Host "Press [ENTER] for Quick Scan [1], or enter [1-4, Q]"
+$prompt = Read-Host "Press [ENTER] for Quick Scan [1], or enter [1-5, Q]"
 if ($prompt -match "^[Qq]") {
     Write-Host "`nScan cancelled by user." -ForegroundColor Yellow
     return
@@ -415,6 +484,26 @@ switch ($choice) {
             return
         }
         $customPath = $customInput
+    }
+    "5" {
+        $scanProfileName = "Custom Game Directory Audit"
+        Write-Host ""
+        $customPz = Read-Host "Enter path to Project Zomboid directory (or drag folder here)"
+        $customPz = $customPz.Trim().Trim('"').Trim("'")
+        if (-not (Test-Path $customPz)) {
+            Write-Host "`n[!] Directory not found: $customPz" -ForegroundColor Red
+            return
+        }
+        $targets.GameRoot.Clear()
+        $targets.GameRoot.Add($customPz)
+        if (Test-Path "$customPz\mods") {
+            if (-not $targets.UserMods.Contains("$customPz\mods")) { $targets.UserMods.Add("$customPz\mods") }
+        }
+        $doScanEngine = $true
+        $doScanWorkshop = $false
+        $doScanUserMods = $true
+        $doScanLauncher = $true
+        $doScanLooseClasses = $true
     }
     default {
         Write-Host "`nUnrecognized option '$choice'. Defaulting to [1] Quick Scan." -ForegroundColor Yellow
