@@ -80,12 +80,17 @@ PZ-ModGuard features 5 selectable scan modes to fit your workflow:
 
 ---
 
-## ℹ️ Pre-Audited Benign Mods
+## ℹ️ Pre-Audited Frameworks & Benign Mods
 
-The following mods have been inspected and whitelisted for specific framework operations:
-* **ZombieBuddy** (`3619862853` & `3807686870`): Uses ByteBuddy agent attachment (`ProcessBuilder`) and bundled cryptography libraries (`org.bouncycastle.*`).
+The following mods have been inspected and classified for specific, legitimate framework operations:
+* **PZ3D** (`3807334881`): Uses a native C++ loader (`pz3dLoader.dll`), dynamic bytecode injection (`ByteBuddy`), and `SelfUpdater.class` (`ProcessBuilder`). Classified as a **Known Native Framework**; deeply audited for 0 hostile malware/stealers.
+* **ZombieBuddy** (`3619862853` & `3807686870`): Uses ByteBuddy agent attachment (`ProcessBuilder`), native hook agent (`zbNative.dll`), and bundled cryptography libraries (`org.bouncycastle.*`).
+* **Discord Rich Presence** (`3785376350` / `ZomboidRichPresence`): Connects to the local Discord desktop application via local IPC sockets (`LinuxIPC.class -> Socket`) to display game status on Discord.
 * **Viewpoint** (`3809306528`): Uses `ProcessBuilder` in `GpuBusy.class` solely to query Windows native `typeperf.exe` for GPU utilization statistics.
 * **PZ_Optimization** (`3805285544`): In-game settings menu buttons use helper calls to `powershell.exe` for game restart and backup restoration.
+* **CarPhysicsImproved** (`3796880595`): Non-executing internal developer build scripts (`build.ps1`/`test.ps1`) left in `media\src\` are classified as harmless dev artifacts.
+
+> **Continuous Security Guarantee:** Pre-audited frameworks are **never** given a blind bypass. Every single `.class` file inside them is continuously scanned for Tier 1 hostile malware signatures (webhooks, stealers, droppers). If a known framework is ever tampered with or compromised, ModGuard will immediately raise a critical threat alarm.
 
 ---
 
