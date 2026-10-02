@@ -2,6 +2,7 @@
 **Advanced Java & Binary Mod Security Guard for Project Zomboid (Build 42)**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/5rmsnwMPez)
 [![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![Game](https://img.shields.io/badge/Project%20Zomboid-Build%2042-darkgreen.svg)](https://projectzomboid.com/)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen.svg)]()
@@ -63,9 +64,18 @@ The following mods have been inspected and whitelisted for specific framework op
 
 ---
 
+## 💬 Community & Discord
+
+Have questions, feedback, or want to discuss Project Zomboid Java modding security?
+Join our community on Discord:
+
+👉 **[Join our Discord Server](https://discord.gg/5rmsnwMPez)**
+
+---
+
 ## 🤝 Contributing & False Positives
 
-If a legitimate mod triggers a false positive notice, please [open an issue](https://github.com/KodeMannn/PZ-ModGuard/issues) with:
+If a legitimate mod triggers a false positive notice, please [open an issue](https://github.com/KodeMannn/PZ-ModGuard/issues) or reach out on [Discord](https://discord.gg/5rmsnwMPez) with:
 1. The Mod Name and Steam Workshop ID.
 2. The relevant lines from your `pz_mod_scan_report.txt`.
 

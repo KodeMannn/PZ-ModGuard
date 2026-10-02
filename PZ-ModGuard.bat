@@ -14,6 +14,7 @@ Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
 Write-Host "                        Version 2.1.1                            " -ForegroundColor DarkCyan
+Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
 
 # 1. High-Precision JVM Class Constant Pool Parser
