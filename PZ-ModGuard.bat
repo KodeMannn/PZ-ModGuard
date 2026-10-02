@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.2.0"
+title "Project Zomboid - Java and Binary Mod Guard v2.4.0"
 color 0F
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression ([System.IO.File]::ReadAllText('%~f0'))"
 echo.
@@ -8,12 +8,15 @@ pause
 exit /b
 #>
 
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.2.0                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.4.0                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
 
@@ -176,6 +179,7 @@ $tier2Patterns = @(
 )
 
 $scopedWhitelist = @(
+    "projectzomboid.jar|org/javacord|discord.com/api/webhooks",
     "ZombieBuddy.jar|ByteBuddyAgent|java/lang/ProcessBuilder",
     "ZombieBuddy.jar|SwingModApprovalFrontend|java/lang/ProcessBuilder",
     "ZombieBuddy.jar|org/bouncycastle|javax/crypto",
@@ -197,6 +201,13 @@ $scopedWhitelist = @(
     "ProjectZomboid64.json.pzopt-backup"
 )
 
+$stockPzPackages = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+@(
+    "astar", "com", "de", "fmod", "generation", "gnu", "imgui", "io",
+    "jassimp", "javax", "kotlin", "META-INF", "N3D", "okhttp3", "okio",
+    "org", "oshi", "pl", "se", "windows", "macos", "linux", "zombie"
+) | ForEach-Object { [void]$stockPzPackages.Add($_) }
+
 function Test-IsWhitelisted($parentPath, $entryPath, $pattern) {
     foreach ($rule in $scopedWhitelist) {
         $parts = $rule.Split('|')
@@ -217,21 +228,116 @@ function Test-IsWhitelisted($parentPath, $entryPath, $pattern) {
     return $false
 }
 
-# Pre-Scan Discovery Count
-$allJars = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
-$allLooseClasses = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+function Audit-PzEngine($gm, $reportLines) {
+    $pzJarPath = "$gm\projectzomboid.jar"
+    if (-not (Test-Path $pzJarPath)) {
+        return $null
+    }
 
-foreach ($ws in $targets.Workshop) {
-    Get-ChildItem -Path $ws -Recurse -Filter "*.jar" -ErrorAction SilentlyContinue | ForEach-Object { $allJars.Add($_) }
-    Get-ChildItem -Path $ws -Recurse -Filter "*.class" -ErrorAction SilentlyContinue | ForEach-Object { $allLooseClasses.Add($_) }
-}
-foreach ($gm in $targets.GameRoot) {
-    Get-ChildItem -Path $gm -Filter "*.jar" -ErrorAction SilentlyContinue | Where-Object { $stockPzJars -notcontains $_.Name } | ForEach-Object { $allJars.Add($_) }
-    Get-ChildItem -Path $gm -Recurse -Filter "*.class" -Exclude "jre64" -ErrorAction SilentlyContinue | ForEach-Object { $allLooseClasses.Add($_) }
-}
-foreach ($um in $targets.UserMods) {
-    Get-ChildItem -Path $um -Recurse -Filter "*.jar" -ErrorAction SilentlyContinue | ForEach-Object { $allJars.Add($_) }
-    Get-ChildItem -Path $um -Recurse -Filter "*.class" -ErrorAction SilentlyContinue | ForEach-Object { $allLooseClasses.Add($_) }
+    Write-Host "`nAuditing Base Game Engine (projectzomboid.jar)..." -ForegroundColor Cyan
+    $reportLines.Add("Base Game Engine Audit: $pzJarPath")
+
+    $pzCritical = [System.Collections.Generic.List[string]]::new()
+    $pzNonStockClasses = [System.Collections.Generic.List[string]]::new()
+    $pzNonStockPackages = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $pzInjectedWarnings = [System.Collections.Generic.List[string]]::new()
+
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($pzJarPath)
+        $classEntries = [System.Collections.Generic.List[System.IO.Compression.ZipArchiveEntry]]::new()
+
+        foreach ($entry in $zip.Entries) {
+            if ($entry.FullName.EndsWith(".class")) {
+                $classEntries.Add($entry)
+                $parts = $entry.FullName.Split('/')
+                $root = $parts[0]
+                if (-not $stockPzPackages.Contains($root)) {
+                    $pzNonStockClasses.Add($entry.FullName)
+                    $pkg = if ($parts.Length -gt 2) { "$($parts[0]).$($parts[1])" } else { $parts[0] }
+                    [void]$pzNonStockPackages.Add($pkg)
+                }
+            }
+        }
+
+        $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
+        $idx = 0
+        $total = $classEntries.Count
+
+        foreach ($entry in $classEntries) {
+            $idx++
+            if ($idx % 1000 -eq 0 -or $idx -eq $total) {
+                Show-ModProgressBar $idx $total "Auditing projectzomboid.jar"
+            }
+
+            $stream = $entry.Open()
+            $reader = New-Object System.IO.StreamReader($stream, $encoding)
+            $content = $reader.ReadToEnd()
+            $reader.Dispose()
+            $stream.Dispose()
+
+            # Check Tier 1 malicious payloads
+            foreach ($p in $tier1Patterns) {
+                if ($content.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                    if (-not (Test-IsWhitelisted "projectzomboid.jar" $entry.FullName $p)) {
+                        $pzCritical.Add("$($entry.FullName) -> contains '$p'")
+                    }
+                }
+            }
+
+            # Check Tier 2 exclusively for non-stock injected mod classes
+            $parts = $entry.FullName.Split('/')
+            if (-not $stockPzPackages.Contains($parts[0])) {
+                foreach ($p in $tier2Patterns) {
+                    if ($content.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        if (-not (Test-IsWhitelisted "projectzomboid.jar" $entry.FullName $p)) {
+                            $pzInjectedWarnings.Add("$($entry.FullName) -> calls '$p'")
+                        }
+                    }
+                }
+            }
+        }
+        $zip.Dispose()
+        Clear-ModProgressBar
+    } catch {
+        Clear-ModProgressBar
+        Write-Host "  [?] Notice: Could not read projectzomboid.jar (file locked or in use)." -ForegroundColor Yellow
+        return $null
+    }
+
+    if ($pzCritical.Count -gt 0) {
+        Write-Host "  [CRITICAL THREAT] Base Game Engine Compromised: $pzJarPath" -ForegroundColor Red
+        $reportLines.Add("  [CRITICAL THREAT] Base Game Engine Compromised: $pzJarPath")
+        $pzCritical | Select-Object -Unique | ForEach-Object {
+            Write-Host "    [!] $_" -ForegroundColor Red
+            $reportLines.Add("    - $_")
+        }
+        Write-Host "    [!] ACTION REQUIRED: Run Steam 'Verify integrity of game files' immediately to restore clean official game files." -ForegroundColor Yellow
+        $reportLines.Add("    - ACTION REQUIRED: Verify integrity of game files via Steam.")
+    } elseif ($pzNonStockPackages.Count -gt 0) {
+        Write-Host "  [i] Notice: projectzomboid.jar contains 3rd-party mod patches ($($pzNonStockPackages -join ', '))" -ForegroundColor Cyan
+        $reportLines.Add("  [i] Notice: projectzomboid.jar contains 3rd-party mod patches ($($pzNonStockPackages -join ', '))")
+        if ($pzInjectedWarnings.Count -gt 0) {
+            Write-Host "  [WARNING / SUSPICIOUS] Injected mod classes contain elevated capabilities:" -ForegroundColor Yellow
+            $reportLines.Add("  [WARNING / SUSPICIOUS] Injected mod classes contain elevated capabilities:")
+            $pzInjectedWarnings | Select-Object -Unique | ForEach-Object {
+                Write-Host "    [*] $_" -ForegroundColor Yellow
+                $reportLines.Add("    - $_")
+            }
+        } else {
+            Write-Host "  [OK] Injected mod patches verified clean (0 malicious payloads)." -ForegroundColor Green
+            $reportLines.Add("  [OK] Injected mod patches verified clean (0 malicious payloads).")
+        }
+    } else {
+        Write-Host "  [OK] Base Engine Verified Clean: projectzomboid.jar ($total classes verified, 0 threats)" -ForegroundColor Green
+        $reportLines.Add("  [OK] Base Engine Verified Clean: projectzomboid.jar ($total classes verified, 0 threats)")
+    }
+
+    return [PSCustomObject]@{
+        Critical = $pzCritical.Count
+        Warnings = $pzInjectedWarnings.Count
+        NonStock = $pzNonStockPackages.Count
+        Classes  = $total
+    }
 }
 
 Write-Host "`nScanning Targets Discovered:" -ForegroundColor White
@@ -248,71 +354,205 @@ if ($targets.UserMods.Count -gt 0) {
     $targets.UserMods | ForEach-Object { Write-Host "    -> $_" -ForegroundColor DarkGray }
 }
 
-Write-Host "`nItems Queued for Inspection:" -ForegroundColor White
-Write-Host "  - $($allJars.Count) Mod JAR Archives (Workshop & Game Root)" -ForegroundColor DarkCyan
-Write-Host "  - $($allLooseClasses.Count) Loose Class Overrides" -ForegroundColor DarkCyan
-Write-Host "  - Main Game Launcher Config (ProjectZomboid64.json)" -ForegroundColor DarkCyan
-Write-Host "  - All Locations for Rogue Native Binaries (.dll, .exe, scripts)" -ForegroundColor DarkCyan
-
-# USER CONFIRMATION PROMPT
+# USER SCAN PROFILE SELECTION
+Write-Host "`n=================================================================" -ForegroundColor Cyan
+Write-Host "                      SELECT SCAN PROFILE                        " -ForegroundColor Cyan
+Write-Host "=================================================================" -ForegroundColor Cyan
+Write-Host "  [1] Quick Scan      - Workshop & User Mods (Fastest, ~1.5s) [DEFAULT]" -ForegroundColor White
+Write-Host "  [2] Full Deep Scan  - Complete Audit (Base Engine + Workshop + Overrides)" -ForegroundColor White
+Write-Host "  [3] Base Engine     - projectzomboid.jar Integrity & Security Audit" -ForegroundColor White
+Write-Host "  [4] Custom Target   - Scan a specific Mod Folder or .JAR file" -ForegroundColor White
+Write-Host "  [Q] Quit / Cancel" -ForegroundColor DarkGray
+Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host ""
-$prompt = Read-Host "Press [ENTER] to start scanning, or type [Q] to quit"
+$prompt = Read-Host "Press [ENTER] for Quick Scan [1], or enter [1-4, Q]"
 if ($prompt -match "^[Qq]") {
     Write-Host "`nScan cancelled by user." -ForegroundColor Yellow
     return
 }
+$choice = if ([string]::IsNullOrWhiteSpace($prompt)) { "1" } else { $prompt.Trim() }
 
-Write-Host "`nStarting comprehensive scan..." -ForegroundColor Green
+$scanProfileName = "Quick Scan"
+$doScanEngine = $false
+$doScanWorkshop = $false
+$doScanUserMods = $false
+$doScanLooseClasses = $false
+$doScanLauncher = $false
+$customPath = $null
+
+switch ($choice) {
+    "1" {
+        $scanProfileName = "Quick Scan"
+        $doScanWorkshop = $true
+        $doScanUserMods = $true
+        $doScanLauncher = $true
+        $doScanLooseClasses = $false
+        $doScanEngine = $false
+    }
+    "2" {
+        $scanProfileName = "Full Deep Scan"
+        $doScanWorkshop = $true
+        $doScanUserMods = $true
+        $doScanLauncher = $true
+        $doScanLooseClasses = $true
+        $doScanEngine = $true
+    }
+    "3" {
+        $scanProfileName = "Base Game Engine Audit"
+        $doScanEngine = $true
+        $doScanLauncher = $true
+        $doScanWorkshop = $false
+        $doScanUserMods = $false
+        $doScanLooseClasses = $false
+    }
+    "4" {
+        $scanProfileName = "Custom Target Scan"
+        Write-Host ""
+        $customInput = Read-Host "Enter or drag-and-drop the path to the Mod folder or .JAR file"
+        $customInput = $customInput.Trim().Trim('"').Trim("'")
+        if (-not (Test-Path $customInput)) {
+            Write-Host "`n[!] Path not found: $customInput" -ForegroundColor Red
+            return
+        }
+        $customPath = $customInput
+    }
+    default {
+        Write-Host "`nUnrecognized option '$choice'. Defaulting to [1] Quick Scan." -ForegroundColor Yellow
+        $scanProfileName = "Quick Scan"
+        $doScanWorkshop = $true
+        $doScanUserMods = $true
+        $doScanLauncher = $true
+        $doScanLooseClasses = $false
+        $doScanEngine = $false
+    }
+}
+
+$allJars = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+$allLooseClasses = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+
+if ($customPath) {
+    if ((Get-Item $customPath) -is [System.IO.FileInfo]) {
+        if ($customPath.EndsWith(".jar", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $allJars.Add((Get-Item $customPath))
+        } elseif ($customPath.EndsWith(".class", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $allLooseClasses.Add((Get-Item $customPath))
+        }
+    } else {
+        Get-ChildItem -Path $customPath -Recurse -Filter "*.jar" -ErrorAction SilentlyContinue | ForEach-Object { $allJars.Add($_) }
+        Get-ChildItem -Path $customPath -Recurse -Filter "*.class" -ErrorAction SilentlyContinue | ForEach-Object { $allLooseClasses.Add($_) }
+    }
+} else {
+    if ($doScanWorkshop) {
+        foreach ($ws in $targets.Workshop) {
+            Get-ChildItem -Path $ws -Recurse -Filter "*.jar" -ErrorAction SilentlyContinue | ForEach-Object { $allJars.Add($_) }
+            if ($doScanLooseClasses) {
+                Get-ChildItem -Path $ws -Recurse -Filter "*.class" -ErrorAction SilentlyContinue | ForEach-Object { $allLooseClasses.Add($_) }
+            }
+        }
+    }
+    if ($doScanUserMods) {
+        foreach ($um in $targets.UserMods) {
+            Get-ChildItem -Path $um -Recurse -Filter "*.jar" -ErrorAction SilentlyContinue | ForEach-Object { $allJars.Add($_) }
+            if ($doScanLooseClasses) {
+                Get-ChildItem -Path $um -Recurse -Filter "*.class" -ErrorAction SilentlyContinue | ForEach-Object { $allLooseClasses.Add($_) }
+            }
+        }
+    }
+    if ($doScanEngine) {
+        foreach ($gm in $targets.GameRoot) {
+            Get-ChildItem -Path $gm -Filter "*.jar" -ErrorAction SilentlyContinue | Where-Object { $stockPzJars -notcontains $_.Name } | ForEach-Object { $allJars.Add($_) }
+            if ($doScanLooseClasses) {
+                Get-ChildItem -Path $gm -Recurse -Filter "*.class" -Exclude "jre64" -ErrorAction SilentlyContinue | ForEach-Object { $allLooseClasses.Add($_) }
+            }
+        }
+    }
+}
+
+Write-Host "`nProfile Selected: $scanProfileName" -ForegroundColor Green
+Write-Host "Items Queued for Inspection:" -ForegroundColor White
+if ($doScanEngine) {
+    Write-Host "  - Base Game Engine Audit (projectzomboid.jar Deep Malware & Integrity Scan)" -ForegroundColor DarkCyan
+}
+if ($allJars.Count -gt 0) {
+    Write-Host "  - $($allJars.Count) Mod JAR Archives" -ForegroundColor DarkCyan
+}
+if ($allLooseClasses.Count -gt 0) {
+    Write-Host "  - $($allLooseClasses.Count) Loose Class Overrides" -ForegroundColor DarkCyan
+}
+if ($doScanLauncher) {
+    Write-Host "  - Main Game Launcher Config (ProjectZomboid64.json)" -ForegroundColor DarkCyan
+}
+if ($customPath) {
+    Write-Host "  - Custom Target: $customPath" -ForegroundColor DarkCyan
+}
+Write-Host "  - All Locations for Rogue Native Binaries (.dll, .exe, scripts)" -ForegroundColor DarkCyan
+
+Write-Host "`nStarting $scanProfileName..." -ForegroundColor Green
 
 $reportLines = [System.Collections.Generic.List[string]]::new()
 $reportLines.Add("Project Zomboid Mod Security Scan Report - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+$reportLines.Add("Scan Profile: $scanProfileName")
 $reportLines.Add("==========================================================================")
 
 $statsCritical = 0
 $statsWarning = 0
 
 # 5. EXECUTION A: Audit Game Root Directories
-foreach ($gm in $targets.GameRoot) {
-    Write-Host "`nAuditing Main Game Directory: $gm" -ForegroundColor DarkGray
-    $reportLines.Add("Main Game Directory: $gm")
+if ($doScanLauncher -or $doScanEngine) {
+    foreach ($gm in $targets.GameRoot) {
+        Write-Host "`nAuditing Main Game Directory: $gm" -ForegroundColor DarkGray
+        $reportLines.Add("Main Game Directory: $gm")
 
-    # A.1. Launcher JSON Agent Audit
-    $jsonPath = "$gm\ProjectZomboid64.json"
-    if (Test-Path $jsonPath) {
-        try {
-            $cfg = Get-Content $jsonPath -Raw | ConvertFrom-Json
-            if ($cfg.vmArgs) {
-                foreach ($arg in $cfg.vmArgs) {
-                    if ($arg -match "^-(agentlib|agentpath|javaagent):(.*)$") {
-                        if ($whitelistedAgents -notcontains $arg) {
-                            $statsCritical++
-                            $msg = "[CRITICAL] Unauthorized JVM Agent Injected into ProjectZomboid64.json: $arg"
-                            Write-Host "  $msg" -ForegroundColor Red
-                            $reportLines.Add("  $msg")
+        # A.1. Launcher JSON Agent Audit
+        if ($doScanLauncher) {
+            $jsonPath = "$gm\ProjectZomboid64.json"
+            if (Test-Path $jsonPath) {
+                try {
+                    $cfg = Get-Content $jsonPath -Raw | ConvertFrom-Json
+                    if ($cfg.vmArgs) {
+                        foreach ($arg in $cfg.vmArgs) {
+                            if ($arg -match "^-(agentlib|agentpath|javaagent):(.*)$") {
+                                if ($whitelistedAgents -notcontains $arg) {
+                                    $statsCritical++
+                                    $msg = "[CRITICAL] Unauthorized JVM Agent Injected into ProjectZomboid64.json: $arg"
+                                    Write-Host "  $msg" -ForegroundColor Red
+                                    $reportLines.Add("  $msg")
+                                }
+                            }
                         }
                     }
-                }
+                } catch {}
             }
-        } catch {}
-    }
+        }
 
-    # A.2. Audit Native Binaries in Game Root
-    $natives = Get-ChildItem -Path "$gm\*" -Include *.dll,*.exe,*.bat,*.cmd,*.ps1,*.vbs -Exclude "PZ-ModGuard.bat","Scan-PZMods.bat" -ErrorAction SilentlyContinue
-    foreach ($n in $natives) {
-        $isStock = ($stockPzDlls -contains $n.Name -or $stockPzScripts -contains $n.Name -or $n.Name -like "ProjectZomboid*.exe")
-        if (-not $isStock -and -not (Test-IsWhitelisted $n.FullName $n.Name "native")) {
-            $statsCritical++
-            $msg = "[CRITICAL] Unauthorized Native Binary in Game Root: $($n.FullName)"
-            Write-Host "  $msg" -ForegroundColor Red
-            $reportLines.Add("  $msg")
+        # A.2. Audit Native Binaries in Game Root
+        $natives = Get-ChildItem -Path "$gm\*" -Include *.dll,*.exe,*.bat,*.cmd,*.ps1,*.vbs -Exclude "PZ-ModGuard.bat","Scan-PZMods.bat" -ErrorAction SilentlyContinue
+        foreach ($n in $natives) {
+            $isStock = ($stockPzDlls -contains $n.Name -or $stockPzScripts -contains $n.Name -or $n.Name -like "ProjectZomboid*.exe")
+            if (-not $isStock -and -not (Test-IsWhitelisted $n.FullName $n.Name "native")) {
+                $statsCritical++
+                $msg = "[CRITICAL] Unauthorized Native Binary in Game Root: $($n.FullName)"
+                Write-Host "  $msg" -ForegroundColor Red
+                $reportLines.Add("  $msg")
+            }
+        }
+
+        # A.3. Base Game Engine Integrity & Malware Audit (projectzomboid.jar)
+        if ($doScanEngine) {
+            $engineRes = Audit-PzEngine $gm $reportLines
+            if ($engineRes) {
+                $statsCritical += $engineRes.Critical
+                $statsWarning += $engineRes.Warnings
+            }
         }
     }
 }
 
 # 6. EXECUTION B: Audit Native Binaries in Workshop & User Mod Dirs
 $nonRootDirs = @()
-$nonRootDirs += $targets.Workshop
-$nonRootDirs += $targets.UserMods
+if ($doScanWorkshop) { $nonRootDirs += $targets.Workshop }
+if ($doScanUserMods) { $nonRootDirs += $targets.UserMods }
+if ($customPath -and ((Get-Item $customPath) -is [System.IO.DirectoryInfo])) { $nonRootDirs += $customPath }
 
 foreach ($dir in $nonRootDirs) {
     $natives = Get-ChildItem -Path $dir -Recurse -Include *.exe,*.dll,*.vbs,*.bat,*.cmd,*.ps1 -Exclude "PZ-ModGuard.bat","Scan-PZMods.bat","install.ps1" -ErrorAction SilentlyContinue
@@ -326,39 +566,37 @@ foreach ($dir in $nonRootDirs) {
     }
 }
 
-# 7. EXECUTION C: Scan JAR Packages with Progress Bar
-Write-Host "`nScanning $($allJars.Count) Mod JAR Packages..." -ForegroundColor DarkGray
-$jarIdx = 0
+# 7. EXECUTION C: Scan JAR Packages with Fast Stream Reader
+if ($allJars.Count -gt 0) {
+    Write-Host "`nScanning $($allJars.Count) Mod JAR Packages..." -ForegroundColor DarkGray
+    $jarIdx = 0
 
-foreach ($jar in $allJars) {
-    $jarIdx++
-    Show-ModProgressBar $jarIdx $allJars.Count $jar.Name
+    foreach ($jar in $allJars) {
+        $jarIdx++
+        Show-ModProgressBar $jarIdx $allJars.Count $jar.Name
 
-    $jarCritical = @()
-    $jarWarning = @()
+        $jarCritical = @()
+        $jarWarning = @()
 
-    try {
-        $zip = [System.IO.Compression.ZipFile]::OpenRead($jar.FullName)
-        foreach ($entry in $zip.Entries) {
-            if ($entry.Name.EndsWith(".class")) {
-                $es = $entry.Open()
-                $ms = New-Object System.IO.MemoryStream
-                $es.CopyTo($ms)
-                $es.Close()
-                
-                $constants = Get-JavaClassConstants $ms.ToArray()
-                $ms.Close()
+        try {
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($jar.FullName)
+            foreach ($entry in $zip.Entries) {
+                if ($entry.FullName.EndsWith(".class")) {
+                    $es = $entry.Open()
+                    $sr = New-Object System.IO.StreamReader($es, $encoding)
+                    $content = $sr.ReadToEnd()
+                    $sr.Dispose()
+                    $es.Dispose()
 
-                foreach ($c in $constants) {
                     foreach ($p in $tier1Patterns) {
-                        if ($c.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        if ($content.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                             if (-not (Test-IsWhitelisted $jar.FullName $entry.FullName $p)) {
                                 $jarCritical += "$($entry.Name) -> contains '$p'"
                             }
                         }
                     }
                     foreach ($p in $tier2Patterns) {
-                        if ($c.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        if ($content.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                             if (-not (Test-IsWhitelisted $jar.FullName $entry.FullName $p)) {
                                 $jarWarning += "$($entry.Name) -> calls '$p'"
                             }
@@ -366,40 +604,40 @@ foreach ($jar in $allJars) {
                     }
                 }
             }
+            $zip.Dispose()
+        } catch {
+            Clear-ModProgressBar
+            Write-Host "  [?] Notice: Could not read $($jar.Name) (file locked or in use)." -ForegroundColor Yellow
+            continue
         }
-        $zip.Dispose()
-    } catch {
-        Clear-ModProgressBar
-        Write-Host "  [?] Notice: Could not read $($jar.Name) (file locked or in use)." -ForegroundColor Yellow
-        continue
-    }
 
-    Clear-ModProgressBar
-    if ($jarCritical.Count -gt 0) {
-        $statsCritical++
-        Write-Host "  [CRITICAL THREAT] $($jar.Name)" -ForegroundColor Red
-        Write-Host "    Path: $($jar.FullName)" -ForegroundColor DarkGray
-        $reportLines.Add("[CRITICAL THREAT] $($jar.FullName)")
-        $jarCritical | Select-Object -Unique | ForEach-Object {
-            Write-Host "    [!] $_" -ForegroundColor Red
-            $reportLines.Add("    - $_")
+        Clear-ModProgressBar
+        if ($jarCritical.Count -gt 0) {
+            $statsCritical++
+            Write-Host "  [CRITICAL THREAT] $($jar.Name)" -ForegroundColor Red
+            Write-Host "    Path: $($jar.FullName)" -ForegroundColor DarkGray
+            $reportLines.Add("[CRITICAL THREAT] $($jar.FullName)")
+            $jarCritical | Select-Object -Unique | ForEach-Object {
+                Write-Host "    [!] $_" -ForegroundColor Red
+                $reportLines.Add("    - $_")
+            }
+        } elseif ($jarWarning.Count -gt 0) {
+            $statsWarning++
+            Write-Host "  [WARNING / SUSPICIOUS] $($jar.Name)" -ForegroundColor Yellow
+            Write-Host "    Path: $($jar.FullName)" -ForegroundColor DarkGray
+            $reportLines.Add("[WARNING / SUSPICIOUS] $($jar.FullName)")
+            $jarWarning | Select-Object -Unique | ForEach-Object {
+                Write-Host "    [*] $_" -ForegroundColor Yellow
+                $reportLines.Add("    - $_")
+            }
+        } else {
+            Write-Host "  [OK] $($jar.Name) ($($jar.Directory.Name))" -ForegroundColor Green
+            $reportLines.Add("  [OK] $($jar.FullName)")
         }
-    } elseif ($jarWarning.Count -gt 0) {
-        $statsWarning++
-        Write-Host "  [WARNING / SUSPICIOUS] $($jar.Name)" -ForegroundColor Yellow
-        Write-Host "    Path: $($jar.FullName)" -ForegroundColor DarkGray
-        $reportLines.Add("[WARNING / SUSPICIOUS] $($jar.FullName)")
-        $jarWarning | Select-Object -Unique | ForEach-Object {
-            Write-Host "    [*] $_" -ForegroundColor Yellow
-            $reportLines.Add("    - $_")
-        }
-    } else {
-        Write-Host "  [OK] $($jar.Name) ($($jar.Directory.Name))" -ForegroundColor Green
-        $reportLines.Add("  [OK] $($jar.FullName)")
     }
 }
 
-# 8. EXECUTION D: Scan Loose .class Files with Progress Bar
+# 8. EXECUTION D: Scan Loose .class Files with Fast Stream Reader
 if ($allLooseClasses.Count -gt 0) {
     Write-Host "`nScanning $($allLooseClasses.Count) Loose Class Overrides..." -ForegroundColor DarkGray
     $looseCritical = @()
@@ -408,25 +646,27 @@ if ($allLooseClasses.Count -gt 0) {
 
     foreach ($cf in $allLooseClasses) {
         $cIdx++
-        if ($cIdx % 25 -eq 0 -or $cIdx -eq $allLooseClasses.Count) {
+        if ($cIdx % 50 -eq 0 -or $cIdx -eq $allLooseClasses.Count) {
             Show-ModProgressBar $cIdx $allLooseClasses.Count "Checking loose classes ($cIdx/$($allLooseClasses.Count))"
         }
         try {
-            $bytes = [System.IO.File]::ReadAllBytes($cf.FullName)
-            $constants = Get-JavaClassConstants $bytes
-            foreach ($c in $constants) {
-                foreach ($p in $tier1Patterns) {
-                    if ($c.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                        if (-not (Test-IsWhitelisted $cf.FullName $cf.Name $p)) {
-                            $looseCritical += "$($cf.Name) -> $p"
-                        }
+            $fs = [System.IO.File]::OpenRead($cf.FullName)
+            $sr = New-Object System.IO.StreamReader($fs, $encoding)
+            $content = $sr.ReadToEnd()
+            $sr.Dispose()
+            $fs.Dispose()
+
+            foreach ($p in $tier1Patterns) {
+                if ($content.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                    if (-not (Test-IsWhitelisted $cf.FullName $cf.Name $p)) {
+                        $looseCritical += "$($cf.Name) -> $p"
                     }
                 }
-                foreach ($p in $tier2Patterns) {
-                    if ($c.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                        if (-not (Test-IsWhitelisted $cf.FullName $cf.Name $p)) {
-                            $looseWarning += "$($cf.Name) -> $p"
-                        }
+            }
+            foreach ($p in $tier2Patterns) {
+                if ($content.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                    if (-not (Test-IsWhitelisted $cf.FullName $cf.Name $p)) {
+                        $looseWarning += "$($cf.Name) -> $p"
                     }
                 }
             }
@@ -457,11 +697,21 @@ if ($allLooseClasses.Count -gt 0) {
 Write-Host "`n=================================================================" -ForegroundColor Cyan
 Write-Host "                        AUDIT SUMMARY                            " -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
+Write-Host "Profile Executed:      $scanProfileName"
 Write-Host "Workshop Locations:    $($targets.Workshop.Count)"
 Write-Host "Game Root Locations:   $($targets.GameRoot.Count)"
 Write-Host "User Mod Locations:    $($targets.UserMods.Count)"
-Write-Host "Total Mod JARs:        $($allJars.Count)"
-Write-Host "Loose Class Overrides: $($allLooseClasses.Count)"
+if ($doScanEngine) {
+    Write-Host "Base Game Engines:     $($targets.GameRoot.Count) Audited"
+} else {
+    Write-Host "Base Game Engines:     Skipped (Included in Full Deep Scan)"
+}
+Write-Host "Total Mod JARs:        $($allJars.Count) Scanned"
+if ($doScanLooseClasses) {
+    Write-Host "Loose Class Overrides: $($allLooseClasses.Count) Scanned"
+} else {
+    Write-Host "Loose Class Overrides: Skipped (Included in Full Deep Scan)"
+}
 
 if ($statsCritical -eq 0 -and $statsWarning -eq 0) {
     Write-Host "`nRESULT: ALL TARGETS CLEAN. No threats or unauthorized modifications detected." -ForegroundColor Green
