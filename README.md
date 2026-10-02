@@ -26,8 +26,13 @@ Starting in Build 42, Project Zomboid mods can execute compiled Java bytecode (`
 
 ## 🔍 Key Features
 
+* **🌐 Multi-Target Auto-Detection:** Automatically discovers and simultaneously scans across all:
+  * **Steam Workshop Mods** (`steamapps/workshop/content/108600`) across all drives (`C:`, `D:`, `E:`, external NVMe SSDs).
+  * **Main Game Directory** (`steamapps/common/ProjectZomboid`) to catch mods and DLLs installed directly into the game root.
+  * **Local User Mods** (`%USERPROFILE%/Zomboid/mods`) for manually installed mods.
+* **🎮 Stock Engine Whitelist:** Automatically filters official Project Zomboid engine binaries (`projectzomboid.jar`, `fmod.dll`, `RakNet64.dll`, etc.) so base game files never trigger false alarms.
+* **⚙️ Launcher JSON Integrity Check:** Inspects `ProjectZomboid64.json` to verify that JVM agent arguments (`-agentlib:`, `-agentpath:`, `-javaagent:`) only reference trusted agents (like `zbNative`).
 * **🔬 High-Precision JVM Constant Pool Parser:** Rather than naive byte-matching (which triggers false positives on compiled opcodes), PZ-ModGuard binary-parses the JVM class file format (`0xCAFEBABE`) in memory to extract true `CONSTANT_Utf8` string literals, method descriptors, and class references.
-* **🌐 Multi-Drive Steam Library Auto-Detection:** Automatically inspects the Windows Registry (`HKCU:\Software\Valve\Steam\SteamPath`) and parses Steam's `libraryfolders.vdf` to discover mods across all storage drives (`C:`, `D:`, `E:`, external NVMe SSDs).
 * **🎯 3-Tier Threat Engine:**
   * **Tier 1 (CRITICAL - Red):** Active malicious payloads (Discord webhooks, Telegram bots, token grabbers, shell invocation like `cmd.exe`/`powershell.exe`, droppers like `curl`/`certutil`, and rogue `.exe`/`.dll`/`.vbs` files).
   * **Tier 2 (WARNING - Yellow):** Evasion and dropper patterns (in-memory classloaders like `ClassLoader.defineClass` used by modular trojans such as Fractureiser, string encryption ciphers like `javax.crypto.Cipher`, and raw TCP sockets).
