@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.1"
+title "Project Zomboid - Java and Binary Mod Guard v2.1.1"
 color 0F
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression ([System.IO.File]::ReadAllText('%~f0'))"
 echo.
@@ -13,7 +13,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.1.0                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.1.1                            " -ForegroundColor DarkCyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 
 # 1. High-Precision JVM Class Constant Pool Parser
@@ -85,14 +85,20 @@ function Show-ModProgressBar($current, $total, $title) {
 }
 
 function Clear-ModProgressBar() {
-    Write-Host -NoNewline ("`r" + (" " * 79) + "`r")
+    Write-Host -NoNewline ("`r" + (" " * 80) + "`r")
     Write-Progress -Activity "Project Zomboid Mod Guard" -Completed
 }
 
-# 3. Multi-Library Steam Auto-Detection
+# 3. Multi-Library Steam Auto-Detection (with HKLM Admin Fallback)
 $workshopDirs = @()
 try {
     $steamPath = (Get-ItemProperty -Path "HKCU:\Software\Valve\Steam" -ErrorAction SilentlyContinue).SteamPath
+    if (-not $steamPath) {
+        $steamPath = (Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam" -ErrorAction SilentlyContinue).InstallPath
+    }
+    if (-not $steamPath) {
+        $steamPath = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Valve\Steam" -ErrorAction SilentlyContinue).InstallPath
+    }
     if ($steamPath) {
         $steamPath = $steamPath.Replace('/', '\')
         $vdf = "$steamPath\steamapps\libraryfolders.vdf"
@@ -170,6 +176,7 @@ $tier2Patterns = @(
     "java/lang/ProcessBuilder", "java/lang/Runtime.getRuntime"
 )
 
+# Scoped Whitelist format: ParentPathOrJar|EntryOrClassName|Pattern
 $scopedWhitelist = @(
     "ZombieBuddy.jar|ByteBuddyAgent|java/lang/ProcessBuilder",
     "ZombieBuddy.jar|SwingModApprovalFrontend|java/lang/ProcessBuilder",
@@ -184,6 +191,10 @@ $scopedWhitelist = @(
     "zbNative.dll",
     "PZ_Optimization|Restart.class|powershell.exe",
     "PZ_Optimization|Uninstall.class|powershell.exe",
+    "PZ_Optimization|Restart.class|java/lang/ProcessBuilder",
+    "PZ_Optimization|Uninstall.class|java/lang/ProcessBuilder",
+    "PZ_Optimization|SoundProbe.class|java/lang/ProcessBuilder",
+    "PZ_Optimization|GameWindow.class|java/lang/ProcessBuilder",
     "PZ_Optimization|install.ps1"
 )
 
@@ -222,8 +233,8 @@ foreach ($ws in $workshopDirs) {
     Write-Host "`nScanning Workshop Location: $ws" -ForegroundColor DarkGray
     $reportLines.Add("Workshop Location: $ws")
 
-    # A. Scan for Unauthorized Native Binaries & Scripts (.exe, .dll, .vbs, .bat)
-    $nativeFiles = Get-ChildItem -Path $ws -Recurse -Include *.exe,*.dll,*.vbs,*.bat -Exclude "PZ-ModGuard.bat","Scan-PZMods.bat","install.ps1" -ErrorAction SilentlyContinue
+    # A. Scan for Unauthorized Native Binaries & Scripts (.exe, .dll, .vbs, .bat, .cmd, .ps1)
+    $nativeFiles = Get-ChildItem -Path $ws -Recurse -Include *.exe,*.dll,*.vbs,*.bat,*.cmd,*.ps1 -Exclude "PZ-ModGuard.bat","Scan-PZMods.bat","install.ps1" -ErrorAction SilentlyContinue
     foreach ($bin in $nativeFiles) {
         $statsTotalNative++
         if (-not (Test-IsWhitelisted $bin.FullName $bin.Name "native")) {
@@ -310,11 +321,12 @@ foreach ($ws in $workshopDirs) {
         }
     }
 
-    # C. Scan Loose .class Files with Progress Bar
+    # C. Scan Loose .class Files with Progress Bar (Tier 1 & Tier 2)
     $looseClasses = Get-ChildItem -Path $ws -Recurse -Filter "*.class" -ErrorAction SilentlyContinue
     if ($looseClasses.Count -gt 0) {
         $statsTotalLooseClasses += $looseClasses.Count
-        $looseFlagged = @()
+        $looseCritical = @()
+        $looseWarning = @()
         $cIdx = 0
 
         foreach ($cf in $looseClasses) {
@@ -326,10 +338,19 @@ foreach ($ws in $workshopDirs) {
                 $bytes = [System.IO.File]::ReadAllBytes($cf.FullName)
                 $constants = Get-JavaClassConstants $bytes
                 foreach ($c in $constants) {
+                    # Tier 1 (Critical)
                     foreach ($p in $tier1Patterns) {
                         if ($c.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
                             if (-not (Test-IsWhitelisted $cf.FullName $cf.Name $p)) {
-                                $looseFlagged += "$($cf.Name) -> $p"
+                                $looseCritical += "$($cf.Name) -> $p"
+                            }
+                        }
+                    }
+                    # Tier 2 (Warning)
+                    foreach ($p in $tier2Patterns) {
+                        if ($c.IndexOf($p, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                            if (-not (Test-IsWhitelisted $cf.FullName $cf.Name $p)) {
+                                $looseWarning += "$($cf.Name) -> $p"
                             }
                         }
                     }
@@ -337,12 +358,19 @@ foreach ($ws in $workshopDirs) {
             } catch {}
         }
         Clear-ModProgressBar
-        if ($looseFlagged.Count -gt 0) {
+        if ($looseCritical.Count -gt 0) {
             $statsCritical++
             Write-Host "  [CRITICAL THREAT] Loose .class files flagged:" -ForegroundColor Red
-            $looseFlagged | Select-Object -Unique | ForEach-Object {
+            $looseCritical | Select-Object -Unique | ForEach-Object {
                 Write-Host "    [!] $_" -ForegroundColor Red
                 $reportLines.Add("  [!] Loose Class: $_")
+            }
+        } elseif ($looseWarning.Count -gt 0) {
+            $statsWarning++
+            Write-Host "  [WARNING / SUSPICIOUS] Loose .class files flagged:" -ForegroundColor Yellow
+            $looseWarning | Select-Object -Unique | ForEach-Object {
+                Write-Host "    [*] $_" -ForegroundColor Yellow
+                $reportLines.Add("  [*] Loose Class: $_")
             }
         } else {
             Write-Host "  [OK] All $($looseClasses.Count) loose .class files clean." -ForegroundColor Green
@@ -373,3 +401,4 @@ try {
     [System.IO.File]::WriteAllLines($reportPath, $reportLines)
     Write-Host "`nDetailed report saved to: $reportPath" -ForegroundColor DarkGray
 } catch {}
+
