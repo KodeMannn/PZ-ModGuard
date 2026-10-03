@@ -7,12 +7,13 @@
 [![Game](https://img.shields.io/badge/Project%20Zomboid-Build%2042-darkgreen.svg)](https://projectzomboid.com/)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen.svg)]()
 [![AI Assisted](https://img.shields.io/badge/Coded%20with-Google%20Gemini-8E75C2?logo=google&logoColor=white)]()
+[![AI Assisted](https://img.shields.io/badge/Coded%20with-Claude%20Code-D97757?logo=claude&logoColor=white)]()
 
 **PZ-ModGuard** is a fast, standalone, pre-launch security scanner engineered to protect Project Zomboid players from malicious Java mods, trojan droppers, and credential stealers. 
 
 Starting in Build 42, Project Zomboid mods can execute compiled Java bytecode (`.jar` / `.class`) and native agents. Because traditional antivirus programs (like Windows Defender) scan Windows `.exe`/`.dll` binaries and are mostly blind to Java bytecode constant pools, **PZ-ModGuard** fills the gap with an in-memory JVM Constant Pool parser and heuristic threat detection engine.
 
-> ℹ️ **Disclaimer:** This project was developed and coded with the assistance of Google Gemini.
+> ℹ️ **Disclaimer:** This project was developed and coded with the assistance of Google Gemini and Claude Code.
 
 ---
 
@@ -23,6 +24,7 @@ Starting in Build 42, Project Zomboid mods can execute compiled Java bytecode (`
 2. **Run**: Double-click `PZ-ModGuard.bat` anywhere on your computer (desktop, workshop folder, or downloads).
 3. **Choose Profile**: Press **[ENTER]** for the default **Quick Scan** (~1.5s), or select **[2] Full Deep Scan** to include the core game engine.
 4. **Play Safe**: Review the color-coded report before launching Project Zomboid.
+5. **Optional, recommended**: Run it again and choose **[6] Auto-Scan Setup** to scan automatically every time you start Project Zomboid from Steam ([details](#-scan-automatically-before-every-launch-steam)).
 
 ### 🐧 Linux & SteamOS (Steam Deck)
 1. **Download**: Grab [`pz-modguard.sh`](https://github.com/KodeMannn/PZ-ModGuard/releases/latest) and [`pz_modguard.py`](https://github.com/KodeMannn/PZ-ModGuard/releases/latest), or download the `.tar.gz` bundle from releases.
@@ -33,8 +35,26 @@ Starting in Build 42, Project Zomboid mods can execute compiled Java bytecode (`
    ```
    *(Or double-click `pz-modguard.sh` in your desktop file manager / Steam Deck Desktop Mode).*
 3. **Choose Profile**: Press **[ENTER]** for **Quick Scan** or select **[2] Full Deep Scan**.
+4. **Optional, recommended**: Run it again and choose **[6] Auto-Scan Setup** to scan automatically every time you start Project Zomboid from Steam ([details](#-scan-automatically-before-every-launch-steam)).
 
 > **Zero Dependencies:** Requires no `pip`, no Node.js, and no external packages. Runs out-of-the-box on Windows 10 & 11 via native PowerShell-Batch polyglot, and on Linux/SteamOS via Python 3's built-in standard library (pre-installed on SteamOS and all standard Linux distros).
+
+---
+
+### 🔁 Scan Automatically Before Every Launch (Steam)
+Run PZ-ModGuard and choose **[6] Auto-Scan Setup**. It:
+1. Copies the scanner to a fixed folder (`%LOCALAPPDATA%\PZ-ModGuard` on Windows, `~/.local/share/pz-modguard` on Linux), so you can delete the download afterwards.
+2. Offers to close Steam (Steam overwrites its settings when it exits).
+3. Adds the scan to Project Zomboid's **Launch Options** in every Steam account on the PC that has played the game, keeping any options you already had (such as ZombieBuddy's `-agentlib:zbNative --`). A backup of each changed file is saved as `localconfig.vdf.pzmg-backup`.
+
+**[7] Remove Auto-Scan** takes it out again. To set it up by hand instead, put this in front of your Launch Options (**Properties → General → Launch Options**):
+
+| Platform | Launch Options |
+| :--- | :--- |
+| Windows | `"C:\path\to\PZ-ModGuard.bat" --launch %command%` |
+| Linux / Steam Deck | `/path/to/pz-modguard.sh --launch %command%` |
+
+Each launch runs a Quick Scan first. Only a clean result starts the game directly. If anything is found (warnings or critical threats), or the scan could not finish, the game does **not** start until you confirm. Anything other than Yes cancels the launch. On Linux that question is a `zenity` dialog. Without `zenity` the launch is blocked and the reason is written to Steam's log. The report is saved next to the script.
 
 ---
 
@@ -62,14 +82,14 @@ PZ-ModGuard features 5 selectable scan modes to fit your workflow:
   * **Portable Drop-in Execution:** Running `PZ-ModGuard.bat` directly from inside any game folder instantly recognizes it as the game root.
   * **Interactive Fallback:** Never crashes or aborts if installed in an unusual path—prompts for folder drag-and-drop.
   * **Local User Mods** (`%USERPROFILE%/Zomboid/mods` and `<GameRoot>/mods`).
-* **⚙️ Launcher JSON Integrity Check:** Inspects `ProjectZomboid64.json` to verify that JVM agent arguments (`-agentlib:`, `-agentpath:`, `-javaagent:`) only reference trusted agents (like `zbNative`).
-* **🔬 High-Precision JVM Bytecode Parser:** Rather than naive byte-matching, PZ-ModGuard inspects the JVM class file format (`0xCAFEBABE`) in memory to extract true string literals, method descriptors, and class references.
+* **⚙️ Launcher Integrity Check:** Inspects `ProjectZomboid64.json`, the launcher `.bat` files and the `JAVA_TOOL_OPTIONS` / `_JAVA_OPTIONS` / `JDK_JAVA_OPTIONS` environment variables, and verifies that JVM agent arguments (`-agentlib:`, `-agentpath:`, `-javaagent:`) only reference trusted agents (like `zbNative`). Any `-Xbootclasspath` override is flagged.
+* **🔬 JVM Bytecode Parser:** Parses each class file's constant pool (`0xCAFEBABE`) and resolves every method / field reference to `owner.member` (e.g. `java/lang/ProcessBuilder.start`). Tier 1 checks string literals; Tier 2 checks exact references, plus names used through reflection (`defineClass`). Malformed class files are flagged.
 * **🎯 3-Tier Threat Engine:**
   * **Tier 1 (CRITICAL - Red):** Active malicious payloads (Discord webhooks, Telegram bots, token grabbers, shell invocation like `cmd.exe`/`powershell.exe`, droppers like `curl`/`certutil`, and rogue `.exe`/`.dll`/`.vbs` files).
   * **Tier 2 (WARNING - Yellow):** Evasion and dropper patterns (in-memory classloaders like `ClassLoader.defineClass` used by modular trojans such as Fractureiser, string encryption ciphers like `javax.crypto.Cipher`, and raw TCP sockets).
   * **Tier 3 (CLEAN - Green):** Audited game reflection, rendering hooks, and math libraries.
-* **🛡️ Anti-Tamper Scoped Whitelisting:** Requires triple-attribute matching `(ParentMod | ClassPath | Pattern)`. A malicious mod cannot evade detection simply by naming its class after a trusted mod.
-* **📦 Full Surface Coverage:** Inspects `.jar` packages, loose `.class` overrides (such as *PZ_Optimization*), and native directory scripts.
+* **🛡️ Workshop-Scoped Whitelisting:** Whitelist rules are `(Workshop ID | ClassPath | Pattern)`. Trust comes from the Steam Workshop item a file lives in, which a mod cannot fake, not from folder, file or class names. Copies in the game folder are trusted only when byte-identical to the Workshop file, or (for class overrides) when they match the SHA-256 in the installing mod's manifest. Tier 1 hits are never blanket-whitelisted.
+* **📦 Full Surface Coverage:** Inspects `.jar` packages (including nested jars and embedded native binaries), loose `.class` files in the game folder (they load ahead of `projectzomboid.jar`, checked against install manifests such as *PZ_Optimization*'s `pzopt-installed.txt`), and native binaries / scripts.
 * **📊 Visual UX & Progress Bar:** Profile selector menu, live ASCII percentage progress bar, Windows notification bar integration, and persistent terminal output.
 * **📝 Automated Audit Logs:** Automatically saves a timestamped scan report to `pz_mod_scan_report.txt` for easy review or sharing.
 
