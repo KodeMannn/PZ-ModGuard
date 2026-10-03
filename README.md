@@ -58,23 +58,25 @@ Each launch runs a Quick Scan first. Only a clean result starts the game directl
 
 ---
 
-## 🚀 Scan Profiles
+## 🚀 Scan Profiles & Automation
 
-PZ-ModGuard features 5 selectable scan modes to fit your workflow:
+PZ-ModGuard features 5 selectable scan profiles and 2 Steam automation tools:
 
-| Profile | Target Coverage | Typical Duration | Best For |
+| Profile / Option | Target Coverage | Typical Duration | Best For |
 | :--- | :--- | :--- | :--- |
 | **`[1] Quick Scan`** *(Default)* | Steam Workshop mods, Local user mods, Launcher config | **~1.5 seconds** | Daily check after subscribing to new mods |
 | **`[2] Full Deep Scan`** | Base engine (`projectzomboid.jar`), Workshop, Loose overrides, Game root | **~6 seconds** | Initial setup or after installing engine-level mods |
 | **`[3] Base Engine Only`** | Dedicated `projectzomboid.jar` integrity audit & Game Root | **~4.5 seconds** | Verifying game engine integrity without scanning mods |
 | **`[4] Custom Target`** | Any specific mod folder or `.jar` file (supports drag-and-drop) | **< 1 second** | Testing an individual mod from NexusMods/Discord |
 | **`[5] Custom Game Dir`** | Point directly to any GOG, standalone, server, or custom folder | **~5 seconds** | GOG Galaxy, DRM-free copies, or dedicated servers |
+| **`[6] Auto-Scan Setup`** | Configures Steam Launch Options for all local Steam accounts | **Instant** | Scanning mods automatically before every game launch |
+| **`[7] Remove Auto-Scan`** | Removes PZ-ModGuard from Steam Launch Options | **Instant** | Reverting Steam launch options back to original state |
 
 ---
 
 ## 🔍 Key Features
 
-* **⚡ Ultra-Fast Stream Engine:** Highly optimized stream reader processes thousands of compiled classes per second, completing full scans in seconds.
+* **⚡ Ultra-Fast In-Memory Engine:** Windows polyglot compiles an in-memory C# parser (`Add-Type`) and Linux executes native Python 3, scanning thousands of compiled classes per second and completing full audits in ~3 to 8 seconds with zero external dependencies.
 * **🎮 Deep Base Engine Audit (`projectzomboid.jar`):** Audits all 23,800+ core game engine classes for trojans and backdoors without triggering false alarms on official engine code, while identifying 3rd-party injected mod packages (such as ZombieBuddy).
 * **🌐 Universal Platform & GOG Support:** Full compatibility with:
   * **Steam Workshop** (`steamapps/workshop/content/108600`) across all drives (`C:`, `D:`, `E:`, external NVMe SSDs).
@@ -82,14 +84,15 @@ PZ-ModGuard features 5 selectable scan modes to fit your workflow:
   * **Portable Drop-in Execution:** Running `PZ-ModGuard.bat` directly from inside any game folder instantly recognizes it as the game root.
   * **Interactive Fallback:** Never crashes or aborts if installed in an unusual path—prompts for folder drag-and-drop.
   * **Local User Mods** (`%USERPROFILE%/Zomboid/mods` and `<GameRoot>/mods`).
-* **⚙️ Launcher Integrity Check:** Inspects `ProjectZomboid64.json`, the launcher `.bat` files and the `JAVA_TOOL_OPTIONS` / `_JAVA_OPTIONS` / `JDK_JAVA_OPTIONS` environment variables, and verifies that JVM agent arguments (`-agentlib:`, `-agentpath:`, `-javaagent:`) only reference trusted agents (like `zbNative`). Any `-Xbootclasspath` override is flagged.
-* **🔬 JVM Bytecode Parser:** Parses each class file's constant pool (`0xCAFEBABE`) and resolves every method / field reference to `owner.member` (e.g. `java/lang/ProcessBuilder.start`). Tier 1 checks string literals; Tier 2 checks exact references, plus names used through reflection (`defineClass`). Malformed class files are flagged.
+* **⚙️ Launcher Integrity & Environment Check:** Inspects `ProjectZomboid64.json`, launcher scripts (`.bat`/`.sh`), and global Java environment variables (`JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`, `JDK_JAVA_OPTIONS`). Verifies that JVM agent arguments (`-agentlib:`, `-agentpath:`, `-javaagent:`) only reference trusted agents (like `zbNative`), and flags any `-Xbootclasspath` overrides.
+* **🔬 High-Precision JVM Bytecode Parser:** Parses each class file's constant pool (`0xCAFEBABE`) and resolves every method / field reference to `owner.member` (e.g. `java/lang/ProcessBuilder.start`). Tier 1 checks string literals; Tier 2 checks exact references, plus names used through reflection (`defineClass`). Malformed, corrupted, or encrypted class files are flagged.
 * **🎯 3-Tier Threat Engine:**
-  * **Tier 1 (CRITICAL - Red):** Active malicious payloads (Discord webhooks, Telegram bots, token grabbers, shell invocation like `cmd.exe`/`powershell.exe`, droppers like `curl`/`certutil`, and rogue `.exe`/`.dll`/`.vbs` files).
+  * **Tier 1 (CRITICAL - Red):** Active malicious payloads (Discord webhooks, Telegram bots, token grabbers, shell invocation like `cmd.exe`/`powershell.exe`, Linux reverse shells, droppers like `curl`/`certutil`, and rogue `.exe`/`.dll`/`.vbs`/`.sh` files).
   * **Tier 2 (WARNING - Yellow):** Evasion and dropper patterns (in-memory classloaders like `ClassLoader.defineClass` used by modular trojans such as Fractureiser, string encryption ciphers like `javax.crypto.Cipher`, and raw TCP sockets).
   * **Tier 3 (CLEAN - Green):** Audited game reflection, rendering hooks, and math libraries.
 * **🛡️ Workshop-Scoped Whitelisting:** Whitelist rules are `(Workshop ID | ClassPath | Pattern)`. Trust comes from the Steam Workshop item a file lives in, which a mod cannot fake, not from folder, file or class names. Copies in the game folder are trusted only when byte-identical to the Workshop file, or (for class overrides) when they match the SHA-256 in the installing mod's manifest. Tier 1 hits are never blanket-whitelisted.
 * **📦 Full Surface Coverage:** Inspects `.jar` packages (including nested jars and embedded native binaries), loose `.class` files in the game folder (they load ahead of `projectzomboid.jar`, checked against install manifests such as *PZ_Optimization*'s `pzopt-installed.txt`), and native binaries / scripts.
+* **🔁 Automatic Pre-Launch Steam Scanning:** Launches game through `--launch %command%`. Automatically audits mods prior to launch; clean launches proceed instantly, while threats or unmanaged overrides halt launch until reviewed.
 * **📊 Visual UX & Progress Bar:** Profile selector menu, live ASCII percentage progress bar, Windows notification bar integration, and persistent terminal output.
 * **📝 Automated Audit Logs:** Automatically saves a timestamped scan report to `pz_mod_scan_report.txt` for easy review or sharing.
 
@@ -100,14 +103,19 @@ PZ-ModGuard features 5 selectable scan modes to fit your workflow:
 | Threat Category | Example Signatures Detected | Severity |
 | :--- | :--- | :--- |
 | **Discord Webhooks / Exfiltration** | `discord.com/api/webhooks`, `discordapp.com/api/webhooks`, `api.telegram.org`, `pastebin.com/raw`, `iplogger`, `grabify` | **CRITICAL** |
-| **Command Execution & Shells** | `cmd.exe`, `powershell.exe`, `wscript.exe`, `cscript.exe` | **CRITICAL** |
-| **Payload Droppers** | `certutil`, `bitsadmin`, `curl.exe` | **CRITICAL** |
-| **Info & Token Stealers** | `\AppData\Roaming\discord`, Chrome User Data, Firefox profiles | **CRITICAL** |
-| **Persistence Mechanisms** | `\Microsoft\Windows\Start Menu\Programs\Startup` | **CRITICAL** |
-| **Unauthorized Native Binaries** | Unwhitelisted `.exe`, `.dll`, `.vbs`, `.bat` files in mod directories | **CRITICAL** |
-| **In-Memory Droppers (Fractureiser)** | `ClassLoader.defineClass`, `URLClassLoader` | **WARNING** |
-| **Obfuscated Ciphers / Encryption** | `javax/crypto/Cipher`, `SecretKeySpec` | **WARNING** |
-| **Raw Network Sockets** | `java/net/Socket`, `java/net/ServerSocket` | **WARNING** |
+| **Command Execution & Shells** | `cmd.exe`, `powershell.exe`, `wscript.exe`, `cscript.exe`, `/bin/bash -i`, `/bin/sh -i`, `nc -e`, `/dev/tcp/` | **CRITICAL** |
+| **Payload Droppers & Downloaders** | `certutil`, `bitsadmin`, `curl.exe` | **CRITICAL** |
+| **Info & Token Stealers** | Windows `\AppData\Roaming\discord`, Chrome User Data, Firefox profiles; Linux `.config/discord`, `.mozilla/firefox`, `.config/google-chrome` | **CRITICAL** |
+| **Persistence Mechanisms** | Windows `\Microsoft\Windows\Start Menu\Programs\Startup` | **CRITICAL** |
+| **Unauthorized Native Binaries** | Unwhitelisted `.exe`, `.dll`, `.so`, `.vbs`, `.bat`, `.cmd`, `.ps1`, `.sh` in mod folders or game root | **CRITICAL** |
+| **Unauthorized JVM Agents & Overrides** | Unapproved `-agentlib:`, `-agentpath:`, `-javaagent:`, or `-Xbootclasspath` in launcher JSON, `.bat`/`.sh` scripts, or environment variables (`JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`, `JDK_JAVA_OPTIONS`) | **CRITICAL** |
+| **Tampered Game Folder Overrides** | Loose `.class` files in game directory with SHA-256 hash mismatches against mod install manifests (`pzopt-installed.txt`) | **CRITICAL** |
+| **Corrupt / Disguised Bytecode** | Malformed constant pools, truncated `.class` files, or non-class payloads claiming `0xCAFEBABE` | **WARNING** |
+| **Bytecode Process Spawning** | Resolved constant pool method calls to `java/lang/ProcessBuilder.start`, `java/lang/Runtime.exec` | **WARNING** |
+| **Network Exfiltration APIs** | Resolved constant pool method calls to `java/net/http/HttpClient.send`, `sendAsync`, `java/net/URL.openConnection`, `openStream` | **WARNING** |
+| **In-Memory Droppers (Fractureiser)** | `java/net/URLClassLoader.<init>`, constant pool references to `defineClass`, `defineHiddenClass` | **WARNING** |
+| **Obfuscated Ciphers / Encryption** | `javax/crypto/Cipher.init`, `SecretKeySpec` | **WARNING** |
+| **Raw Network Sockets** | `java/net/Socket.<init>`, `java/net/ServerSocket.<init>` | **WARNING** |
 
 ---
 
