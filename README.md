@@ -71,6 +71,7 @@ PZ-ModGuard features 5 selectable scan profiles and 2 Steam automation tools:
 | **`[5] Custom Game Dir`** | Point directly to any GOG, standalone, server, or custom folder | **~5 seconds** | GOG Galaxy, DRM-free copies, or dedicated servers |
 | **`[6] Auto-Scan Setup`** | Configures Steam Launch Options for all local Steam accounts | **Instant** | Scanning mods automatically before every game launch |
 | **`[7] Remove Auto-Scan`** | Removes PZ-ModGuard from Steam Launch Options | **Instant** | Reverting Steam launch options back to original state |
+| **`[8] User Exceptions`** | Manage trusted SHA-256 exceptions (view, add, remove) | **Instant** | Suppressing known benign warnings (e.g. LLM mods) |
 
 ---
 
@@ -130,6 +131,32 @@ The following mods have been inspected and classified for specific, legitimate f
 * **CarPhysicsImproved** (`3796880595`): Non-executing internal developer build scripts (`build.ps1`/`test.ps1`) left in `media\src\` are classified as harmless dev artifacts.
 
 > **Continuous Security Guarantee:** Pre-audited frameworks are **never** given a blind bypass. Every single `.class` file inside them is continuously scanned for Tier 1 hostile malware signatures (webhooks, stealers, droppers). If a known framework is ever tampered with or compromised, ModGuard will immediately raise a critical threat alarm.
+
+---
+
+## 🔐 User-Defined SHA-256 Exceptions (v2.8.0)
+
+Some advanced or niche mods legitimately make external connections or use elevated Java capabilities. A prime example is **Project Remnants**, which uses Java's HTTP client (`HttpClient.send`) to communicate with an external Large Language Model (LLM) server.
+
+Instead of permanently turning off warnings or whitelisting mods by name (which malware could easily impersonate), PZ-ModGuard features **Cryptographic SHA-256 Exception Pinning**:
+
+1. **Cryptographic Integrity**: When you approve a warning as trusted, PZ-ModGuard pins the exact SHA-256 cryptographic checksum of that container or class bytecode in `pzmg_exceptions.json`.
+2. **Automatic Invalidation on Update**: As long as the file's SHA-256 hash remains unchanged, warnings are suppressed and marked `[USER EXCEPTION] (SHA-256 verified)`. If the mod author publishes an update on Steam Workshop, or if any byte in the file is modified or tampered with, the exception **automatically expires**, and PZ-ModGuard alerts you with an expiration notice.
+3. **Interactive 1-Click Prompt**: If any interactive scan detects warnings, PZ-ModGuard asks:
+   ```
+   Would you like to save any detected warning(s) as a trusted SHA-256 exception? [Y/N]
+   ```
+   Selecting `Y` lets you approve the warning in a single keystroke.
+4. **Dedicated Management Menu `[8]`**: From the main menu, press `[8]` at any time to:
+   - List all active exceptions with target names, class entries, API patterns, and SHA-256 hashes.
+   - Manually exempt a file by entering its path or dragging-and-dropping it into the window.
+   - Remove individual exceptions or clear all.
+5. **Tier 1 Critical Safeguard**: To prevent accidental bypasses of real threats, wildcard `pattern = "*"` exceptions will **never** suppress a Tier 1 Critical threat (Discord webhooks, reverse shells, token stealers).
+
+Stored location:
+- **Windows**: `%LOCALAPPDATA%\PZ-ModGuard\pzmg_exceptions.json`
+- **Linux / SteamOS**: `~/.local/share/pz-modguard/pzmg_exceptions.json`
+- **Portable**: Automatically checks `./pzmg_exceptions.json` in the scanner's folder.
 
 ---
 

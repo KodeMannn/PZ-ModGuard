@@ -23,7 +23,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -219,6 +219,117 @@ def test_is_whitelisted(scope: str, entry_path: str, pattern: str, tier1: bool =
     return False
 
 
+# --- User-Defined SHA-256 Exceptions ----------------------------------------------------------------------
+
+USER_EXCEPTIONS = []
+USER_EXCEPTIONS_LOADED_COUNT = 0
+
+
+def get_exceptions_file_path() -> Path:
+    if platform.system() == "Windows":
+        local_appdata = os.environ.get("LOCALAPPDATA", "")
+        if local_appdata:
+            return Path(local_appdata) / "PZ-ModGuard" / "pzmg_exceptions.json"
+        return Path.home() / "AppData" / "Local" / "PZ-ModGuard" / "pzmg_exceptions.json"
+    else:
+        return Path.home() / ".local" / "share" / "pz-modguard" / "pzmg_exceptions.json"
+
+
+def load_user_exceptions():
+    global USER_EXCEPTIONS, USER_EXCEPTIONS_LOADED_COUNT
+    USER_EXCEPTIONS = []
+    candidates = [
+        get_exceptions_file_path(),
+        Path(__file__).resolve().parent / "pzmg_exceptions.json",
+        Path.cwd() / "pzmg_exceptions.json"
+    ]
+    seen = set()
+    for p in candidates:
+        if p.is_file():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8", errors="ignore"))
+                if isinstance(data, list):
+                    for item in data:
+                        key = f"{item.get('sha256', '')}|{item.get('entry', '')}|{item.get('pattern', '')}"
+                        if key not in seen:
+                            seen.add(key)
+                            USER_EXCEPTIONS.append(item)
+                elif isinstance(data, dict):
+                    key = f"{data.get('sha256', '')}|{data.get('entry', '')}|{data.get('pattern', '')}"
+                    if key not in seen:
+                        seen.add(key)
+                        USER_EXCEPTIONS.append(data)
+            except Exception:
+                pass
+    USER_EXCEPTIONS_LOADED_COUNT = len(USER_EXCEPTIONS)
+
+
+def save_user_exceptions():
+    p = get_exceptions_file_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(USER_EXCEPTIONS, indent=2), encoding="utf-8")
+
+
+def test_is_user_exception(file_hash: str, class_hash: str, entry_path: str, pattern: str, tier: int, file_name: str = "") -> dict:
+    f_hash = (file_hash or "").strip().lower()
+    c_hash = (class_hash or "").strip().lower()
+    entry_norm = (entry_path or "").replace('\\', '/').lower()
+    pat_norm = (pattern or "").lower()
+    fname_norm = (file_name or "").lower()
+
+    for ex in USER_EXCEPTIONS:
+        ex_hash = str(ex.get("sha256", "")).strip().lower()
+        if not ex_hash:
+            continue
+        # Hash must match either container hash or class bytecode hash
+        if f_hash != ex_hash and c_hash != ex_hash:
+            continue
+        # Tier 1 Critical Protection: wildcard '*' pattern is NOT permitted for Tier 1
+        ex_pat = str(ex.get("pattern", "")).strip()
+        if tier == 1 and (ex_pat == "*" or not ex_pat):
+            continue
+        ex_entry = str(ex.get("entry", "*")).strip().lower()
+        ex_target = str(ex.get("target", "*")).strip().lower()
+
+        # Entry or file name match
+        entry_match = (
+            not ex_entry or ex_entry == "*" or
+            fnmatch.fnmatchcase(entry_norm, ex_entry) or
+            (fname_norm and fnmatch.fnmatchcase(fname_norm, ex_entry)) or
+            (fname_norm and fnmatch.fnmatchcase(fname_norm, ex_target))
+        )
+        pattern_match = (not ex_pat or ex_pat == "*" or fnmatch.fnmatchcase(pat_norm, ex_pat.lower()))
+
+        if entry_match and pattern_match:
+            return ex
+    return None
+
+
+def get_expired_exception_notice(file_hash: str, class_hash: str, file_name: str, entry_path: str = "") -> str:
+    f_hash = (file_hash or "").strip().lower()
+    c_hash = (class_hash or "").strip().lower()
+    fname_norm = (file_name or "").lower()
+    entry_norm = (entry_path or "").replace('\\', '/').lower()
+
+    for ex in USER_EXCEPTIONS:
+        ex_target = str(ex.get("target", "")).strip().lower()
+        ex_entry = str(ex.get("entry", "")).strip().lower()
+        name_match = (
+            (fname_norm and fnmatch.fnmatchcase(fname_norm, ex_target)) or
+            (entry_norm and fnmatch.fnmatchcase(entry_norm, ex_entry))
+        )
+        if name_match:
+            ex_hash = str(ex.get("sha256", "")).strip().lower()
+            matched = (f_hash and f_hash == ex_hash) or (c_hash and c_hash == ex_hash)
+            if not matched:
+                hash_short = ex.get("sha256", "")[:10] + "..." if len(ex.get("sha256", "")) >= 10 else ex.get("sha256", "")
+                return f"Stored exception for '{ex.get('target', file_name)}' expired because the file changed (stored SHA-256: {hash_short})"
+    return None
+
+
+load_user_exceptions()
+
+
 # --- JVM class file constant pool parser -------------------------------------------------------------------
 
 def parse_class(b: bytes):
@@ -284,21 +395,22 @@ def parse_class(b: bytes):
 # --- Scanning: hits are (tier, entry, pattern, text); whitelisting is applied once the owner's scope is known ---
 
 def scan_class(data: bytes, entry: str, hits: list):
+    class_hash = hashlib.sha256(data).hexdigest()
     cp = parse_class(data)
     if cp is None:
-        hits.append((2, entry, "invalid-class", f"{entry} -> not a valid class file (corrupt, encrypted or disguised)"))
+        hits.append((2, entry, "invalid-class", f"{entry} -> not a valid class file (corrupt, encrypted or disguised)", class_hash))
         return
     all_utf, literals, refs = cp
     literals_lower = literals.lower()
     for p, p_lower in TIER_1_LOWER:
         if p_lower in literals_lower:
-            hits.append((1, entry, p, f"{entry} -> contains '{p}'"))
+            hits.append((1, entry, p, f"{entry} -> contains '{p}'", class_hash))
     for p in TIER_2_REFS:
         if f"\n{p}\n" in refs:
-            hits.append((2, entry, p, f"{entry} -> calls '{p}'"))
+            hits.append((2, entry, p, f"{entry} -> calls '{p}'", class_hash))
     for p in TIER_2_NAMES:
         if f"\n{p}\n" in all_utf:
-            hits.append((2, entry, p, f"{entry} -> references '{p}'"))
+            hits.append((2, entry, p, f"{entry} -> references '{p}'", class_hash))
 
 
 def scan_archive(z: zipfile.ZipFile, prefix: str, hits: list, class_hashes=None):
@@ -318,18 +430,26 @@ def scan_archive(z: zipfile.ZipFile, prefix: str, hits: list, class_hashes=None)
                 with zipfile.ZipFile(io.BytesIO(z.read(info))) as inner:
                     scan_archive(inner, name + "!/", hits)
             except Exception:
-                hits.append((2, name, "nested-archive", f"{name} -> nested archive could not be opened"))
+                hits.append((2, name, "nested-archive", f"{name} -> nested archive could not be opened", ""))
         elif EMBEDDED_NATIVE_RE.search(info.filename):
-            hits.append((2, name, "native", f"{name} -> embedded native binary / script"))
+            native_data = z.read(info)
+            native_hash = hashlib.sha256(native_data).hexdigest()
+            hits.append((2, name, "native", f"{name} -> embedded native binary / script", native_hash))
 
 
-def select_unlisted_hits(hits: list, scope: str):
-    critical, warning = [], []
+def select_unlisted_hits(hits: list, scope: str, file_hash: str = "", file_name: str = ""):
+    critical, warning, user_exceptions = [], [], []
     for h in hits:
-        if test_is_whitelisted(scope, h[1], h[2], tier1=(h[0] == 1)):
+        tier, entry, pattern, text = h[0], h[1], h[2], h[3]
+        chash = h[4] if len(h) > 4 else ""
+        if test_is_whitelisted(scope, entry, pattern, tier1=(tier == 1)):
             continue
-        (critical if h[0] == 1 else warning).append(h)
-    return critical, warning
+        ex = test_is_user_exception(file_hash, chash, entry, pattern, tier, file_name)
+        if ex:
+            user_exceptions.append({"hit": h, "exception": ex})
+            continue
+        (critical if tier == 1 else warning).append(h)
+    return critical, warning, user_exceptions
 
 
 # --- Scopes: "ws:<WorkshopID>" for files inside a Workshop item, "engine" for projectzomboid.jar, otherwise ---
@@ -729,7 +849,17 @@ def audit_pz_engine(gm_path: str, report_lines: list) -> dict:
         print(f"  {COLOR_YELLOW}[?] Notice: Could not read projectzomboid.jar ({e}){COLOR_RESET}")
         return {"Critical": 0, "Warnings": 0, "NonStock": 0, "Classes": 0}
 
-    critical, warning = select_unlisted_hits(hits, "engine")
+    pz_hash = ""
+    try:
+        pz_hash = sha256_file(jar_path)
+    except OSError:
+        pass
+    critical, warning, user_exceptions = select_unlisted_hits(hits, "engine", pz_hash, "projectzomboid.jar")
+    if user_exceptions:
+        for ue in user_exceptions:
+            h = ue["hit"]
+            print(f"    {COLOR_CYAN}[USER EXCEPTION] {h[1]} -> {h[2]} (SHA-256 verified){COLOR_RESET}")
+            report_lines.append(f"    [USER EXCEPTION] {jar_path} ({h[1]} -> {h[2]} [SHA-256 verified])")
     pz_critical = [f"{h[1]} -> contains '{h[2]}'" for h in critical]
     # Tier 2 only matters for classes injected by mods: stock engine code legitimately uses these APIs
     pz_injected_warnings = [f"{h[1]} -> {h[2]}" for h in warning if h[1].split('/')[0].lower() not in STOCK_PZ_PACKAGES]
@@ -762,6 +892,7 @@ def audit_pz_engine(gm_path: str, report_lines: list) -> dict:
     return {
         "Critical": len(pz_critical),
         "Warnings": len(pz_injected_warnings),
+        "UserExceptions": len(user_exceptions),
         "NonStock": len(pz_non_stock_packages),
         "Classes": total_classes
     }
@@ -774,6 +905,8 @@ class Scan:
         self.report_lines = report_lines
         self.critical = 0
         self.warning = 0
+        self.stats_user_exceptions = 0
+        self.prompt_warnings = []
         self.known_frameworks_found = []
 
     def finding(self, severity: str, msg: str):
@@ -807,9 +940,33 @@ class Scan:
             print(f"  {COLOR_GRAY}[i] Notice: Non-executing dev/install script: {n.name}{COLOR_RESET}")
             self.report_lines.append(f"  [i] Notice: Non-executing dev/install script: {n}")
         elif not test_is_whitelisted(scope, n.name, "native"):
+            n_hash = ""
+            try:
+                n_hash = sha256_file(n)
+            except OSError:
+                pass
+            ex = test_is_user_exception(n_hash, "", n.name, "native", 1, n.name)
+            if ex:
+                self.stats_user_exceptions += 1
+                print(f"  {COLOR_CYAN}[USER EXCEPTION - CRITICAL CAPABILITY] {n.name} (SHA-256 verified){COLOR_RESET}")
+                self.report_lines.append(f"  [USER EXCEPTION - CRITICAL CAPABILITY] {n} (SHA-256 verified)")
+                return
+            exp_notice = get_expired_exception_notice(n_hash, "", n.name, n.name)
+            if exp_notice:
+                self.finding("warning", f"[!] {exp_notice}")
             self.finding("critical", f"[CRITICAL] Unauthorized Native Binary{where}: {n}")
 
-    def result(self, name: str, path: str, critical: list, warning: list, ok_line: str):
+    def result(self, name: str, path: str, critical: list, warning: list, ok_line: str,
+               user_exceptions: list = None, expired_notice: str = None, file_hash: str = ""):
+        if expired_notice:
+            print(f"  {COLOR_YELLOW}[!] Notice: {expired_notice}{COLOR_RESET}")
+            self.report_lines.append(f"  [!] Notice: {expired_notice}")
+        if user_exceptions:
+            self.stats_user_exceptions += len(user_exceptions)
+            for ue in user_exceptions:
+                h = ue["hit"]
+                print(f"  {COLOR_CYAN}[USER EXCEPTION] {name} ({h[1]} -> {h[2]} [SHA-256 verified]){COLOR_RESET}")
+                self.report_lines.append(f"  [USER EXCEPTION] {path} ({h[1]} -> {h[2]} [SHA-256 verified])")
         if critical:
             self.critical += 1
             print(f"  {COLOR_RED}[CRITICAL THREAT] {name}{COLOR_RESET}")
@@ -829,10 +986,117 @@ class Scan:
             for text in dict.fromkeys(h[3] for h in warning):
                 print(f"    {COLOR_YELLOW}[*] {text}{COLOR_RESET}")
                 self.report_lines.append(f"    - {text}")
+            for w in warning:
+                self.prompt_warnings.append({
+                    "TargetName": name,
+                    "TargetPath": path,
+                    "FileHash": file_hash,
+                    "Hit": w
+                })
         else:
+            suffix = f" (with {len(user_exceptions)} verified user exception{'s' if len(user_exceptions) > 1 else ''})" if user_exceptions else ""
             color = COLOR_CYAN if ok_line.startswith("[KNOWN") else COLOR_GREEN
-            print(f"  {color}{ok_line}{COLOR_RESET}")
-            self.report_lines.append(f"  {ok_line}")
+            print(f"  {color}{ok_line}{suffix}{COLOR_RESET}")
+            self.report_lines.append(f"  {ok_line}{suffix}")
+
+
+def show_exceptions_menu():
+    while True:
+        ex_file = get_exceptions_file_path()
+        print(f"\n{COLOR_CYAN}================================================================={COLOR_RESET}")
+        print(f"{COLOR_CYAN}                    USER SHA-256 EXCEPTIONS                      {COLOR_RESET}")
+        print(f"{COLOR_CYAN}================================================================={COLOR_RESET}")
+        print(f"{COLOR_GRAY}Config File: {ex_file}{COLOR_RESET}")
+        print(f"{COLOR_WHITE}Active Exceptions: {len(USER_EXCEPTIONS)}{COLOR_RESET}\n")
+        print(f"  {COLOR_WHITE}[1] List All Active Exceptions{COLOR_RESET}")
+        print(f"  {COLOR_WHITE}[2] Add Exception Manually (File Drag-and-Drop or Path){COLOR_RESET}")
+        print(f"  {COLOR_WHITE}[3] Remove an Exception{COLOR_RESET}")
+        print(f"  {COLOR_WHITE}[4] View Exceptions JSON Content{COLOR_RESET}")
+        print(f"  {COLOR_WHITE}[5] Clear All Exceptions{COLOR_RESET}")
+        print(f"  {COLOR_GRAY}[B] Back to Main Menu{COLOR_RESET}")
+        print(f"{COLOR_CYAN}================================================================={COLOR_RESET}\n")
+
+        try:
+            ex_choice = input("Select option [1-5, B]: ").strip()
+        except EOFError:
+            break
+
+        if ex_choice == "1":
+            print("")
+            if not USER_EXCEPTIONS:
+                print(f"  {COLOR_YELLOW}No user exceptions defined yet.{COLOR_RESET}\n")
+            else:
+                for idx, e in enumerate(USER_EXCEPTIONS, 1):
+                    print(f"  [{idx}] Target: {e.get('target', '')} | Entry: {e.get('entry', '')} | Pattern: {e.get('pattern', '')}")
+                    print(f"      SHA-256: {e.get('sha256', '')}")
+                    if e.get("comment"):
+                        print(f"      Note:    {e.get('comment')}")
+                print("")
+            try:
+                input("Press [ENTER] to continue...")
+            except EOFError:
+                pass
+        elif ex_choice == "2":
+            print("")
+            p_in = input("Enter or drag-and-drop the file to exempt (.jar, .class, .so, .dll, etc.): ").strip().strip('"').strip("'")
+            p = Path(p_in)
+            if not p.is_file():
+                print(f"\n{COLOR_RED}[!] File not found: {p_in}{COLOR_RESET}")
+                time.sleep(2)
+                continue
+            h = sha256_file(p)
+            print(f"  File:    {p.name}")
+            print(f"  SHA-256: {h}")
+            ent = input("Enter class entry to exempt (or press [ENTER] for entire file '*'): ").strip() or "*"
+            pat = input("Enter API pattern to exempt (or press [ENTER] for all warnings '*'): ").strip() or "*"
+            note = input(f"Enter optional note/comment (e.g. '{p.name} LLM mod'): ").strip()
+
+            new_ex = {
+                "sha256": h.lower(),
+                "target": p.name,
+                "entry": ent,
+                "pattern": pat,
+                "comment": note,
+                "date_added": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            USER_EXCEPTIONS.append(new_ex)
+            save_user_exceptions()
+            print(f"\n{COLOR_GREEN}[+] Exception added successfully!{COLOR_RESET}")
+            time.sleep(1.5)
+        elif ex_choice == "3":
+            print("")
+            if not USER_EXCEPTIONS:
+                print(f"  {COLOR_YELLOW}No exceptions to remove.{COLOR_RESET}")
+                time.sleep(1.5)
+                continue
+            for idx, e in enumerate(USER_EXCEPTIONS, 1):
+                print(f"  [{idx}] {e.get('target', '')} ({e.get('entry', '')} -> {e.get('pattern', '')})")
+            rem = input("\nEnter item number to remove (or [C] to cancel): ").strip()
+            if rem.isdigit() and 1 <= int(rem) <= len(USER_EXCEPTIONS):
+                removed = USER_EXCEPTIONS.pop(int(rem) - 1)
+                save_user_exceptions()
+                print(f"\n{COLOR_YELLOW}[-] Removed exception for {removed.get('target')}.{COLOR_RESET}")
+                time.sleep(1.5)
+        elif ex_choice == "4":
+            ex_file = get_exceptions_file_path()
+            if ex_file.is_file():
+                print(f"\n--- {ex_file} ---")
+                print(ex_file.read_text(encoding="utf-8", errors="ignore"))
+            else:
+                print(f"\n{COLOR_YELLOW}File {ex_file} does not exist yet.{COLOR_RESET}")
+            try:
+                input("\nPress [ENTER] to continue...")
+            except EOFError:
+                pass
+        elif ex_choice == "5":
+            conf = input("Are you sure you want to clear ALL exceptions? [Y/N]: ").strip().lower()
+            if conf.startswith("y"):
+                USER_EXCEPTIONS.clear()
+                save_user_exceptions()
+                print(f"\n{COLOR_YELLOW}[!] All exceptions cleared.{COLOR_RESET}")
+                time.sleep(1.5)
+        else:
+            break
 
 
 def main(profile=None):
@@ -880,31 +1144,36 @@ def main(profile=None):
     if profile:
         user_choice = profile
     else:
-        print(f"\n{COLOR_CYAN}================================================================={COLOR_RESET}")
-        print(f"{COLOR_CYAN}                      SELECT SCAN PROFILE                        {COLOR_RESET}")
-        print(f"{COLOR_CYAN}================================================================={COLOR_RESET}")
-        print(f"  {COLOR_WHITE}[1] Quick Scan      - Workshop & User Mods (Fastest, ~1.5s) [DEFAULT]{COLOR_RESET}")
-        print(f"  {COLOR_WHITE}[2] Full Deep Scan  - Complete Audit (Base Engine + Workshop + Overrides){COLOR_RESET}")
-        print(f"  {COLOR_WHITE}[3] Base Engine     - projectzomboid.jar Integrity & Security Audit{COLOR_RESET}")
-        print(f"  {COLOR_WHITE}[4] Custom Target   - Scan a specific Mod Folder or .JAR file{COLOR_RESET}")
-        print(f"  {COLOR_WHITE}[5] Custom Game Dir - Point to a GOG / Standalone / Custom PZ Folder{COLOR_RESET}")
-        print(f"  {COLOR_WHITE}[6] Auto-Scan Setup - Scan automatically every time Project Zomboid starts (Steam){COLOR_RESET}")
-        print(f"  {COLOR_WHITE}[7] Remove Auto-Scan{COLOR_RESET}")
-        print(f"  {COLOR_GRAY}[Q] Quit / Cancel{COLOR_RESET}")
-        print(f"{COLOR_CYAN}================================================================={COLOR_RESET}\n")
+        while True:
+            print(f"\n{COLOR_CYAN}================================================================={COLOR_RESET}")
+            print(f"{COLOR_CYAN}                      SELECT SCAN PROFILE                        {COLOR_RESET}")
+            print(f"{COLOR_CYAN}================================================================={COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[1] Quick Scan      - Workshop & User Mods (Fastest, ~1.5s) [DEFAULT]{COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[2] Full Deep Scan  - Complete Audit (Base Engine + Workshop + Overrides){COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[3] Base Engine     - projectzomboid.jar Integrity & Security Audit{COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[4] Custom Target   - Scan a specific Mod Folder or .JAR file{COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[5] Custom Game Dir - Point to a GOG / Standalone / Custom PZ Folder{COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[6] Auto-Scan Setup - Scan automatically every time Project Zomboid starts (Steam){COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[7] Remove Auto-Scan{COLOR_RESET}")
+            print(f"  {COLOR_WHITE}[8] User Exceptions - Manage trusted SHA-256 exceptions ({len(USER_EXCEPTIONS)} Active){COLOR_RESET}")
+            print(f"  {COLOR_GRAY}[Q] Quit / Cancel{COLOR_RESET}")
+            print(f"{COLOR_CYAN}================================================================={COLOR_RESET}\n")
 
-        # In non-interactive piped environments, default to "1"
-        try:
-            user_choice = input("Press [ENTER] for Quick Scan [1], or enter [1-7, Q]: ").strip()
-        except EOFError:
-            user_choice = "1"
-    if user_choice in ("6", "7"):
-        install_auto_scan(remove=(user_choice == "7"))
-        return
+            try:
+                user_choice = input("Press [ENTER] for Quick Scan [1], or enter [1-8, Q]: ").strip()
+            except EOFError:
+                user_choice = "1"
 
-    if user_choice.lower().startswith("q"):
-        print("\nScan cancelled by user.")
-        return
+            if user_choice in ("6", "7"):
+                install_auto_scan(remove=(user_choice == "7"))
+                continue
+            if user_choice == "8":
+                show_exceptions_menu()
+                continue
+            if user_choice.lower().startswith("q"):
+                print("\nScan cancelled by user.")
+                return
+            break
 
     choice = user_choice if user_choice else "1"
 
@@ -1119,7 +1388,13 @@ def main(profile=None):
                 origin = ", identical to Workshop copy"
 
             clear_progress_bar()
-            critical, warning = select_unlisted_hits(hits, scope)
+            jar_hash = ""
+            try:
+                jar_hash = sha256_file(jar_path)
+            except OSError:
+                pass
+            exp_notice = get_expired_exception_notice(jar_hash, "", jar_path.name, "")
+            critical, warning, user_exceptions = select_unlisted_hits(hits, scope, jar_hash, jar_path.name)
             if in_scope(scope, WS_PZ3D):
                 ok_line = f"[KNOWN FRAMEWORK] {jar_path.name} (PZ3D Camera Engine - Verified 0 Malicious Payloads{origin})"
             elif in_scope(scope, WS_ZOMBIEBUDDY):
@@ -1128,7 +1403,7 @@ def main(profile=None):
                 ok_line = f"[OK] {jar_path.name} (Discord Rich Presence - Verified Clean{origin})"
             else:
                 ok_line = f"[OK] {jar_path.name} ({jar_path.parent.name}{origin})"
-            scan.result(jar_path.name, str(jar_path), critical, warning, ok_line)
+            scan.result(jar_path.name, str(jar_path), critical, warning, ok_line, user_exceptions, exp_notice, jar_hash)
 
     # D. Scan Loose .class Files
     # D.1. Game folder overrides: verified against install manifests, then scanned with the manifest owner's scope
@@ -1165,8 +1440,8 @@ def main(profile=None):
                 report_lines.append(f"    - {f}")
         for scope, hits in by_scope.items():
             label = f"Game folder overrides from {scope}" if scope else "Game folder overrides without a verified source"
-            critical, warning = select_unlisted_hits(hits, scope)
-            scan.result(label, label, critical, warning, f"[OK] {label} clean." if scope else "[OK] Game folder overrides clean.")
+            critical, warning, user_exceptions = select_unlisted_hits(hits, scope)
+            scan.result(label, label, critical, warning, f"[OK] {label} clean." if scope else "[OK] Game folder overrides clean.", user_exceptions)
 
     # D.2. Loose classes in Workshop / user mod folders (Full Deep Scan)
     if all_loose_classes:
@@ -1183,8 +1458,8 @@ def main(profile=None):
         clear_progress_bar()
         for scope, hits in by_scope.items():
             label = f"Loose classes in Workshop item {scope}" if scope else "Loose classes outside the Workshop"
-            critical, warning = select_unlisted_hits(hits, scope)
-            scan.result(label, label, critical, warning, f"[OK] {label} clean.")
+            critical, warning, user_exceptions = select_unlisted_hits(hits, scope)
+            scan.result(label, label, critical, warning, f"[OK] {label} clean.", user_exceptions)
 
     # 9. Final Audit Summary
     print(f"\n{COLOR_CYAN}================================================================={COLOR_RESET}")
@@ -1211,6 +1486,8 @@ def main(profile=None):
     if known_frameworks_found:
         frameworks_str = ", ".join(known_frameworks_found)
         print(f"{COLOR_CYAN}Known Native Frameworks: {len(known_frameworks_found)} Audited ({frameworks_str}){COLOR_RESET}")
+    if scan.stats_user_exceptions > 0:
+        print(f"{COLOR_DARK_CYAN}User Exceptions:       {scan.stats_user_exceptions} Active (SHA-256 Verified){COLOR_RESET}")
 
     if stats_critical == 0 and stats_warning == 0:
         if known_frameworks_found:
@@ -1219,6 +1496,8 @@ def main(profile=None):
             print(f"{COLOR_CYAN}Notice: {len(known_frameworks_found)} known 3rd-party framework(s) detected with elevated system hooks ({frameworks_str}). Verified clean.{COLOR_RESET}")
         else:
             print(f"\n{COLOR_GREEN}RESULT: ALL TARGETS CLEAN. No threats or unauthorized modifications detected.{COLOR_RESET}")
+        if scan.stats_user_exceptions > 0:
+            print(f"{COLOR_DARK_CYAN}Notice: {scan.stats_user_exceptions} user exception(s) active and verified by SHA-256.{COLOR_RESET}")
     elif stats_critical == 0 and stats_warning > 0:
         print(f"\n{COLOR_YELLOW}RESULT: CAUTION. {stats_warning} item(s) have suspicious indicators requiring review.{COLOR_RESET}")
     else:
@@ -1231,6 +1510,63 @@ def main(profile=None):
         print(f"\n{COLOR_GRAY}Detailed report saved to: {report_path}{COLOR_RESET}")
     except Exception:
         pass
+
+    # Interactive Post-Scan Prompt for Warnings
+    if not profile and scan.prompt_warnings:
+        print("")
+        try:
+            save_ex = input("Would you like to save any detected warning(s) as a trusted SHA-256 exception? [Y/N]: ").strip().lower()
+        except EOFError:
+            save_ex = "n"
+        if save_ex.startswith("y"):
+            print(f"\n{COLOR_CYAN}Detected Suspicious Items:{COLOR_RESET}")
+            for idx, pw in enumerate(scan.prompt_warnings, 1):
+                h = pw["Hit"]
+                h_show = pw["FileHash"] if pw["FileHash"] else (h[4] if len(h) > 4 else "")
+                print(f"  [{idx}] {pw['TargetName']}")
+                print(f"      Entry:   {h[1]}")
+                print(f"      Warning: {h[2]}")
+                print(f"      SHA-256: {h_show}")
+            try:
+                picks = input("\nEnter item number(s) to trust (e.g. '1' or '1,2'), or [C] to cancel: ").strip()
+            except EOFError:
+                picks = ""
+            if picks and not picks.lower().startswith("c"):
+                parts = [p.strip() for p in picks.replace(',', ' ').split() if p.strip().isdigit()]
+                for p_num in parts:
+                    num = int(p_num)
+                    if 1 <= num <= len(scan.prompt_warnings):
+                        item = scan.prompt_warnings[num - 1]
+                        h = item["Hit"]
+                        try:
+                            choice_type = input(f"Trust entire file '{item['TargetName']}' [F] or only this specific class [C]? [Default: F]: ").strip().lower()
+                        except EOFError:
+                            choice_type = "f"
+                        if choice_type.startswith("c") and len(h) > 4 and h[4]:
+                            target_hash = h[4]
+                            target_entry = h[1]
+                            target_pattern = h[2]
+                        else:
+                            target_hash = item["FileHash"] if item["FileHash"] else (h[4] if len(h) > 4 else "")
+                            target_entry = "*"
+                            target_pattern = "*"
+                        try:
+                            comment = input(f"Enter optional note for this exception (e.g. '{item['TargetName']} LLM mod'): ").strip()
+                        except EOFError:
+                            comment = ""
+                        new_ex = {
+                            "sha256": target_hash.lower(),
+                            "target": item["TargetName"],
+                            "entry": target_entry,
+                            "pattern": target_pattern,
+                            "comment": comment,
+                            "date_added": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        USER_EXCEPTIONS.append(new_ex)
+                save_user_exceptions()
+                print(f"\n{COLOR_GREEN}[+] Exceptions saved to {get_exceptions_file_path()}!{COLOR_RESET}")
+                print(f"{COLOR_DARK_CYAN}Future scans will verify this SHA-256 hash and suppress the warning as long as the file is unmodified.{COLOR_RESET}")
+                time.sleep(2)
 
     # Exit code for the --launch gate in pz-modguard.sh: 20 = critical, 10 = warnings only, 0 = clean.
     # Anything else (e.g. 1 from a crash) means the scan did not finish and the gate asks before launching.

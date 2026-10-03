@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.7.0"
+title "Project Zomboid - Java and Binary Mod Guard v2.8.0"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -44,7 +44,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.7.0                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.8.0                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -102,17 +102,18 @@ public static class PzmgClassFile {
             return BitConverter.ToString(h.ComputeHash(b)).Replace("-", "").ToLowerInvariant();
     }
 
-    // Hits are {tier, entry, pattern, text}. Tier 1: string literals; Tier 2: exact "owner.member" references and
+    // Hits are {tier, entry, pattern, text, classHash}. Tier 1: string literals; Tier 2: exact "owner.member" references and
     // whole constant-pool names (which also catch reflective calls).
     public static void ScanClass(byte[] b, string entry, string[] t1, string[] t2Refs, string[] t2Names, List<string[]> hits) {
         string[] cp = Parse(b);
-        if (cp == null) { hits.Add(new[] { "2", entry, "invalid-class", entry + " -> not a valid class file (corrupt, encrypted or disguised)" }); return; }
+        string hash = Sha256(b);
+        if (cp == null) { hits.Add(new[] { "2", entry, "invalid-class", entry + " -> not a valid class file (corrupt, encrypted or disguised)", hash }); return; }
         foreach (string p in t1)
-            if (cp[1].IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) hits.Add(new[] { "1", entry, p, entry + " -> contains '" + p + "'" });
+            if (cp[1].IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) hits.Add(new[] { "1", entry, p, entry + " -> contains '" + p + "'", hash });
         foreach (string p in t2Refs)
-            if (cp[2].Contains("\n" + p + "\n")) hits.Add(new[] { "2", entry, p, entry + " -> calls '" + p + "'" });
+            if (cp[2].Contains("\n" + p + "\n")) hits.Add(new[] { "2", entry, p, entry + " -> calls '" + p + "'", hash });
         foreach (string p in t2Names)
-            if (cp[0].Contains("\n" + p + "\n")) hits.Add(new[] { "2", entry, p, entry + " -> references '" + p + "'" });
+            if (cp[0].Contains("\n" + p + "\n")) hits.Add(new[] { "2", entry, p, entry + " -> references '" + p + "'", hash });
     }
 
     static readonly Regex Archive = new Regex(@"\.(jar|zip)$", RegexOptions.IgnoreCase);
@@ -154,9 +155,10 @@ public static class PzmgClassFile {
                     ScanClass(b, name, t1, t2Refs, t2Names, hits);
                 } else if (Archive.IsMatch(e.FullName)) {
                     try { ScanArchive(new MemoryStream(ReadAll(e)), name + "!/", t1, t2Refs, t2Names, hits, null); }
-                    catch (Exception) { hits.Add(new[] { "2", name, "nested-archive", name + " -> nested archive could not be opened" }); }
+                    catch (Exception) { hits.Add(new[] { "2", name, "nested-archive", name + " -> nested archive could not be opened", "" }); }
                 } else if (Native.IsMatch(e.FullName)) {
-                    hits.Add(new[] { "2", name, "native", name + " -> embedded native binary / script" });
+                    byte[] nb = ReadAll(e);
+                    hits.Add(new[] { "2", name, "native", name + " -> embedded native binary / script", Sha256(nb) });
                 }
             }
         }
@@ -460,13 +462,115 @@ function Get-FileScope($path) {
     return ""
 }
 
-function New-Hit($tier, $entry, $pattern, $text) {
-    [PSCustomObject]@{ Tier = $tier; Entry = $entry; Pattern = $pattern; Text = $text }
+# 4.2. User Exceptions (Cryptographically Verified SHA-256 Custom Exceptions)
+function Get-ExceptionsFilePath() {
+    $scriptDir = if ($selfPath) { Split-Path $selfPath } else { (Get-Location).Path }
+    $portablePath = Join-Path $scriptDir "pzmg_exceptions.json"
+    if (Test-Path -LiteralPath $portablePath) { return $portablePath }
+    $localDir = Join-Path $env:LOCALAPPDATA "PZ-ModGuard"
+    if (-not (Test-Path -LiteralPath $localDir)) { [void](New-Item -ItemType Directory -Path $localDir -Force) }
+    return (Join-Path $localDir "pzmg_exceptions.json")
+}
+
+$userExceptions = [System.Collections.Generic.List[object]]::new()
+$userExceptionsLoadedCount = 0
+$statsUserExceptions = 0
+$promptWarnings = [System.Collections.Generic.List[object]]::new()
+
+function Load-UserExceptions() {
+    $script:userExceptions.Clear()
+    $candidateFiles = @()
+    $localPath = Join-Path $env:LOCALAPPDATA "PZ-ModGuard\pzmg_exceptions.json"
+    if (Test-Path -LiteralPath $localPath) { $candidateFiles += $localPath }
+    $scriptDir = if ($selfPath) { Split-Path $selfPath } else { (Get-Location).Path }
+    $portablePath = Join-Path $scriptDir "pzmg_exceptions.json"
+    if ((Test-Path -LiteralPath $portablePath) -and $portablePath -ne $localPath) { $candidateFiles += $portablePath }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($f in $candidateFiles) {
+        try {
+            $content = [System.IO.File]::ReadAllText($f)
+            $items = ConvertFrom-Json $content
+            if ($items -is [System.Array] -or $items -is [System.Collections.IEnumerable]) {
+                foreach ($it in $items) {
+                    $key = "$($it.sha256)|$($it.entry)|$($it.pattern)"
+                    if (-not $seen.Contains($key)) {
+                        [void]$seen.Add($key)
+                        $script:userExceptions.Add($it)
+                    }
+                }
+            } elseif ($items) {
+                $key = "$($items.sha256)|$($items.entry)|$($items.pattern)"
+                if (-not $seen.Contains($key)) {
+                    [void]$seen.Add($key)
+                    $script:userExceptions.Add($items)
+                }
+            }
+        } catch {}
+    }
+    $script:userExceptionsLoadedCount = $script:userExceptions.Count
+}
+
+Load-UserExceptions
+
+function Save-UserExceptions() {
+    $targetPath = Get-ExceptionsFilePath
+    $dir = Split-Path $targetPath
+    if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+    $json = ConvertTo-Json -InputObject @($script:userExceptions) -Depth 4
+    [System.IO.File]::WriteAllText($targetPath, $json, [System.Text.Encoding]::UTF8)
+}
+
+function Test-IsUserException($fileHash, $classHash, $entryPath, $pattern, $tier, $fileName) {
+    foreach ($ex in $script:userExceptions) {
+        $exHash = "$($ex.sha256)".Trim().ToLower()
+        if (-not $exHash) { continue }
+
+        # Hash must match either the container file hash or the specific class bytecode hash
+        $hashMatch = ($fileHash -and $fileHash.ToLower() -eq $exHash) -or ($classHash -and $classHash.ToLower() -eq $exHash)
+        if (-not $hashMatch) { continue }
+
+        # Tier 1 Critical Protection: wildcard '*' pattern is NOT permitted for Tier 1
+        if ($tier -eq 1 -and ($ex.pattern -eq '*' -or -not $ex.pattern)) { continue }
+
+        # Target entry or file name match
+        $entryMatch = (-not $ex.entry -or $ex.entry -eq '*' -or $entryPath -like $ex.entry -or ($fileName -and $fileName -like $ex.entry) -or ($fileName -and $fileName -like $ex.target))
+        $patternMatch = (-not $ex.pattern -or $ex.pattern -eq '*' -or $pattern -like $ex.pattern)
+
+        if ($entryMatch -and $patternMatch) {
+            return $ex
+        }
+    }
+    return $null
+}
+
+function Get-ExpiredExceptionNotice($fileHash, $classHash, $fileName, $entryPath) {
+    foreach ($ex in $script:userExceptions) {
+        $exTarget = "$($ex.target)".Trim()
+        $exEntry = "$($ex.entry)".Trim()
+        $nameMatch = ($fileName -and $fileName -like $exTarget) -or ($entryPath -and $entryPath -like $exEntry)
+        if ($nameMatch) {
+            $exHash = "$($ex.sha256)".Trim().ToLower()
+            $matched = ($fileHash -and $fileHash.ToLower() -eq $exHash) -or ($classHash -and $classHash.ToLower() -eq $exHash)
+            if (-not $matched) {
+                $hashShort = if ($ex.sha256.Length -ge 10) { $ex.sha256.Substring(0,10) + "..." } else { $ex.sha256 }
+                return "Stored exception for '$exTarget' expired because the file changed (stored SHA-256: $hashShort)"
+            }
+        }
+    }
+    return $null
+}
+
+function New-Hit($tier, $entry, $pattern, $text, $hash) {
+    [PSCustomObject]@{ Tier = $tier; Entry = $entry; Pattern = $pattern; Text = $text; Hash = $hash }
 }
 
 # Hits are recorded unfiltered; whitelisting is applied later, once the owning file's scope is known.
 function Add-RawHits($hits, $raw) {
-    foreach ($h in $raw) { $hits.Add((New-Hit ([int]$h[0]) $h[1] $h[2] $h[3])) }
+    foreach ($h in $raw) {
+        $hHash = if ($h.Length -gt 4) { $h[4] } else { "" }
+        $hits.Add((New-Hit ([int]$h[0]) $h[1] $h[2] $h[3] $hHash))
+    }
 }
 
 function Add-ClassHits($hits, [byte[]]$bytes, $entryName) {
@@ -484,14 +588,20 @@ function Add-JarHits($hits, $path, $classHashes) {
     Add-RawHits $hits $raw
 }
 
-function Select-UnlistedHits($hits, $scope) {
+function Select-UnlistedHits($hits, $scope, $fileHash = "", $fileName = "") {
     $critical = [System.Collections.Generic.List[object]]::new()
     $warning = [System.Collections.Generic.List[object]]::new()
+    $userEx = [System.Collections.Generic.List[object]]::new()
     foreach ($h in $hits) {
         if (Test-IsWhitelisted $scope $h.Entry $h.Pattern -Tier1:($h.Tier -eq 1)) { continue }
+        $ex = Test-IsUserException $fileHash $h.Hash $h.Entry $h.Pattern $h.Tier $fileName
+        if ($ex) {
+            $userEx.Add([PSCustomObject]@{ Hit = $h; Exception = $ex })
+            continue
+        }
         if ($h.Tier -eq 1) { $critical.Add($h) } else { $warning.Add($h) }
     }
-    return [PSCustomObject]@{ Critical = $critical; Warning = $warning }
+    return [PSCustomObject]@{ Critical = $critical; Warning = $warning; UserExceptions = $userEx }
 }
 
 # Loads install manifests from a game folder. Returns the paths of manifest entries that are missing on disk.
@@ -545,7 +655,16 @@ function Audit-PzEngine($gm, $reportLines) {
         return $null
     }
 
-    $res = Select-UnlistedHits $hits "engine"
+    $pzHash = try { (Get-FileHash -LiteralPath $pzJarPath -Algorithm SHA256).Hash.ToLower() } catch { "" }
+    $res = Select-UnlistedHits $hits "engine" $pzHash "projectzomboid.jar"
+    if ($res.UserExceptions -and $res.UserExceptions.Count -gt 0) {
+        $script:statsUserExceptions += $res.UserExceptions.Count
+        foreach ($ue in $res.UserExceptions) {
+            $h = $ue.Hit
+            Write-Host "    [USER EXCEPTION] $($h.Entry) -> $($h.Pattern) (SHA-256 verified)" -ForegroundColor DarkCyan
+            $reportLines.Add("    [USER EXCEPTION] $($pzJarPath) ($($h.Entry) -> $($h.Pattern) [SHA-256 verified])")
+        }
+    }
     $pzCritical = @($res.Critical | ForEach-Object { "$($_.Entry) -> contains '$($_.Pattern)'" })
     # Tier 2 only matters for classes injected by mods: stock engine code legitimately uses these APIs
     $pzInjectedWarnings = @($res.Warning | Where-Object { -not $stockPzPackages.Contains($_.Entry.Split('/')[0]) } |
@@ -685,30 +804,145 @@ function Install-AutoScan([switch]$Remove) {
     }
 }
 
+function Show-ExceptionsMenu() {
+    while ($true) {
+        Clear-Host
+        $exFile = Get-ExceptionsFilePath
+        Write-Host "=================================================================" -ForegroundColor Cyan
+        Write-Host "                    USER SHA-256 EXCEPTIONS                      " -ForegroundColor Cyan
+        Write-Host "=================================================================" -ForegroundColor Cyan
+        Write-Host "Config File: $exFile" -ForegroundColor DarkGray
+        Write-Host "Active Exceptions: $($script:userExceptions.Count)" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  [1] List All Active Exceptions" -ForegroundColor White
+        Write-Host "  [2] Add Exception Manually (File Drag-and-Drop or Path)" -ForegroundColor White
+        Write-Host "  [3] Remove an Exception" -ForegroundColor White
+        Write-Host "  [4] Open Exceptions File in Notepad" -ForegroundColor White
+        Write-Host "  [5] Clear All Exceptions" -ForegroundColor White
+        Write-Host "  [B] Back to Main Menu" -ForegroundColor DarkGray
+        Write-Host "=================================================================" -ForegroundColor Cyan
+        Write-Host ""
+        $exChoice = Read-Host "Select option [1-5, B]"
+        switch ($exChoice) {
+            "1" {
+                Write-Host ""
+                if ($script:userExceptions.Count -eq 0) {
+                    Write-Host "  No user exceptions defined yet." -ForegroundColor Yellow
+                } else {
+                    $idx = 0
+                    foreach ($e in $script:userExceptions) {
+                        $idx++
+                        Write-Host "  [$idx] Target: $($e.target) | Entry: $($e.entry) | Pattern: $($e.pattern)" -ForegroundColor Cyan
+                        Write-Host "      SHA-256: $($e.sha256)" -ForegroundColor DarkGray
+                        if ($e.comment) { Write-Host "      Note:    $($e.comment)" -ForegroundColor Gray }
+                    }
+                }
+                Write-Host ""
+                pause
+            }
+            "2" {
+                Write-Host ""
+                $p = Read-Host "Enter or drag-and-drop the file to exempt (.jar, .class, .dll, etc.)"
+                $p = $p.Trim().Trim('"').Trim("'")
+                if (-not (Test-Path -LiteralPath $p)) {
+                    Write-Host "`n[!] File not found: $p" -ForegroundColor Red
+                    Start-Sleep -Seconds 2
+                    continue
+                }
+                $leaf = Split-Path $p -Leaf
+                $hash = (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLower()
+                Write-Host "  File:    $leaf" -ForegroundColor Cyan
+                Write-Host "  SHA-256: $hash" -ForegroundColor DarkGray
+                $ent = Read-Host "Enter class entry to exempt (or press [ENTER] for entire file '*')"
+                if ([string]::IsNullOrWhiteSpace($ent)) { $ent = "*" }
+                $pat = Read-Host "Enter API pattern to exempt (or press [ENTER] for all warnings '*')"
+                if ([string]::IsNullOrWhiteSpace($pat)) { $pat = "*" }
+                $note = Read-Host "Enter optional note/comment (e.g. '$leaf LLM mod')"
+                
+                $newEx = [PSCustomObject]@{
+                    sha256 = $hash
+                    target = $leaf
+                    entry = $ent
+                    pattern = $pat
+                    comment = $note
+                    date_added = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+                }
+                $script:userExceptions.Add($newEx)
+                Save-UserExceptions
+                Write-Host "`n[+] Exception added successfully!" -ForegroundColor Green
+                Start-Sleep -Seconds 2
+            }
+            "3" {
+                Write-Host ""
+                if ($script:userExceptions.Count -eq 0) {
+                    Write-Host "  No exceptions to remove." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 2
+                    continue
+                }
+                $idx = 0
+                foreach ($e in $script:userExceptions) {
+                    $idx++
+                    Write-Host "  [$idx] $($e.target) ($($e.entry) -> $($e.pattern))" -ForegroundColor White
+                }
+                $rem = Read-Host "`nEnter item number to remove (or [C] to cancel)"
+                if ($rem -match '^\d+$' -and [int]$rem -ge 1 -and [int]$rem -le $script:userExceptions.Count) {
+                    $removed = $script:userExceptions[[int]$rem - 1]
+                    $script:userExceptions.RemoveAt([int]$rem - 1)
+                    Save-UserExceptions
+                    Write-Host "`n[-] Removed exception for $($removed.target)." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 2
+                }
+            }
+            "4" {
+                $targetFile = Get-ExceptionsFilePath
+                if (-not (Test-Path -LiteralPath $targetFile)) { Save-UserExceptions }
+                Start-Process "notepad.exe" $targetFile
+            }
+            "5" {
+                $confirm = Read-Host "Are you sure you want to clear ALL exceptions? [Y/N]"
+                if ($confirm -match '^[Yy]') {
+                    $script:userExceptions.Clear()
+                    Save-UserExceptions
+                    Write-Host "`n[!] All exceptions cleared." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 2
+                }
+            }
+            default {
+                # Return to caller
+            }
+        }
+    }
+}
+
 # USER SCAN PROFILE SELECTION (preset by the batch header when launched from Steam with --launch)
 if ($env:PZMG_PROFILE) {
     $prompt = $env:PZMG_PROFILE
 } else {
-    Write-Host "`n=================================================================" -ForegroundColor Cyan
-    Write-Host "                      SELECT SCAN PROFILE                        " -ForegroundColor Cyan
-    Write-Host "=================================================================" -ForegroundColor Cyan
-    Write-Host "  [1] Quick Scan      - Workshop & User Mods (Fastest, ~1.5s) [DEFAULT]" -ForegroundColor White
-    Write-Host "  [2] Full Deep Scan  - Complete Audit (Base Engine + Workshop + Overrides)" -ForegroundColor White
-    Write-Host "  [3] Base Engine     - projectzomboid.jar Integrity & Security Audit" -ForegroundColor White
-    Write-Host "  [4] Custom Target   - Scan a specific Mod Folder or .JAR file" -ForegroundColor White
-    Write-Host "  [5] Custom Game Dir - Point to a GOG / Standalone / Custom PZ Folder" -ForegroundColor White
-    Write-Host "  [6] Auto-Scan Setup - Scan automatically every time Project Zomboid starts (Steam)" -ForegroundColor White
-    Write-Host "  [7] Remove Auto-Scan" -ForegroundColor White
-    Write-Host "  [Q] Quit / Cancel" -ForegroundColor DarkGray
-    Write-Host "=================================================================" -ForegroundColor Cyan
-    Write-Host ""
-    $prompt = Read-Host "Press [ENTER] for Quick Scan [1], or enter [1-7, Q]"
-}
-if ($prompt -eq "6") { Install-AutoScan; return }
-if ($prompt -eq "7") { Install-AutoScan -Remove; return }
-if ($prompt -match "^[Qq]") {
-    Write-Host "`nScan cancelled by user." -ForegroundColor Yellow
-    return
+    while ($true) {
+        Write-Host "`n=================================================================" -ForegroundColor Cyan
+        Write-Host "                      SELECT SCAN PROFILE                        " -ForegroundColor Cyan
+        Write-Host "=================================================================" -ForegroundColor Cyan
+        Write-Host "  [1] Quick Scan      - Workshop & User Mods (Fastest, ~1.5s) [DEFAULT]" -ForegroundColor White
+        Write-Host "  [2] Full Deep Scan  - Complete Audit (Base Engine + Workshop + Overrides)" -ForegroundColor White
+        Write-Host "  [3] Base Engine     - projectzomboid.jar Integrity & Security Audit" -ForegroundColor White
+        Write-Host "  [4] Custom Target   - Scan a specific Mod Folder or .JAR file" -ForegroundColor White
+        Write-Host "  [5] Custom Game Dir - Point to a GOG / Standalone / Custom PZ Folder" -ForegroundColor White
+        Write-Host "  [6] Auto-Scan Setup - Scan automatically every time Project Zomboid starts (Steam)" -ForegroundColor White
+        Write-Host "  [7] Remove Auto-Scan" -ForegroundColor White
+        Write-Host "  [8] User Exceptions - Manage trusted SHA-256 exceptions ($($script:userExceptions.Count) Active)" -ForegroundColor White
+        Write-Host "  [Q] Quit / Cancel" -ForegroundColor DarkGray
+        Write-Host "=================================================================" -ForegroundColor Cyan
+        Write-Host ""
+        $prompt = Read-Host "Press [ENTER] for Quick Scan [1], or enter [1-8, Q]"
+        if ($prompt -eq "6") { Install-AutoScan; pause; continue }
+        if ($prompt -eq "7") { Install-AutoScan -Remove; pause; continue }
+        if ($prompt -eq "8") { Show-ExceptionsMenu; continue }
+        if ($prompt -match "^[Qq]") {
+            Write-Host "`nScan cancelled by user." -ForegroundColor Yellow
+            return
+        }
+        break
+    }
 }
 $choice = if ([string]::IsNullOrWhiteSpace($prompt)) { "1" } else { $prompt.Trim() }
 
@@ -879,6 +1113,8 @@ $reportLines.Add("==============================================================
 
 $statsCritical = 0
 $statsWarning = 0
+$statsUserExceptions = 0
+$promptWarnings = [System.Collections.Generic.List[object]]::new()
 
 function Write-Finding($severity, $msg) {
     if ($severity -eq "critical") { $script:statsCritical++; $color = "Red" }
@@ -914,6 +1150,18 @@ function Test-NativeBinary($n, $scope, $where) {
         Write-Host "  [i] Notice: Non-executing dev/install script: $($n.Name)" -ForegroundColor DarkGray
         $reportLines.Add("  [i] Notice: Non-executing dev/install script: $($n.FullName)")
     } elseif (-not (Test-IsWhitelisted $scope $n.Name "native")) {
+        $nHash = try { (Get-FileHash -LiteralPath $n.FullName -Algorithm SHA256).Hash.ToLower() } catch { "" }
+        $ex = Test-IsUserException $nHash "" $n.Name "native" 1 $n.Name
+        if ($ex) {
+            $script:statsUserExceptions++
+            Write-Host "  [USER EXCEPTION - CRITICAL CAPABILITY] $($n.Name) (SHA-256 verified)" -ForegroundColor DarkCyan
+            $reportLines.Add("  [USER EXCEPTION - CRITICAL CAPABILITY] $($n.FullName) (SHA-256 verified)")
+            return
+        }
+        $expNotice = Get-ExpiredExceptionNotice $nHash "" $n.Name $n.Name
+        if ($expNotice) {
+            Write-Finding "warning" "[!] $expNotice"
+        }
         Write-Finding "critical" "[CRITICAL] Unauthorized Native Binary${where}: $($n.FullName)"
     }
 }
@@ -983,7 +1231,19 @@ if ($doScanGameRoot) {
 # 6. EXECUTION B: Audit Native Binaries in Workshop & User Mod Dirs
 foreach ($n in $modNatives) { Test-NativeBinary $n (Get-WorkshopScope $n.FullName) "" }
 
-function Write-ScanResult($name, $path, $res, $okLine) {
+function Write-ScanResult($name, $path, $res, $okLine, $expiredNotice = $null, $fileHash = "") {
+    if ($expiredNotice) {
+        Write-Host "  [!] Notice: $expiredNotice" -ForegroundColor Yellow
+        $reportLines.Add("  [!] Notice: $expiredNotice")
+    }
+    if ($res.UserExceptions -and $res.UserExceptions.Count -gt 0) {
+        $script:statsUserExceptions += $res.UserExceptions.Count
+        foreach ($ue in $res.UserExceptions) {
+            $h = $ue.Hit
+            Write-Host "  [USER EXCEPTION] $name ($($h.Entry) -> $($h.Pattern) [SHA-256 verified])" -ForegroundColor DarkCyan
+            $reportLines.Add("  [USER EXCEPTION] $path ($($h.Entry) -> $($h.Pattern) [SHA-256 verified])")
+        }
+    }
     if ($res.Critical.Count -gt 0) {
         $script:statsCritical++
         Write-Host "  [CRITICAL THREAT] $name" -ForegroundColor Red
@@ -1006,9 +1266,20 @@ function Write-ScanResult($name, $path, $res, $okLine) {
             Write-Host "    [*] $_" -ForegroundColor Yellow
             $reportLines.Add("    - $_")
         }
+        foreach ($w in $res.Warning) {
+            $script:promptWarnings.Add([PSCustomObject]@{
+                TargetName = $name
+                TargetPath = $path
+                FileHash = $fileHash
+                Hit = $w
+            })
+        }
     } else {
-        Write-Host "  $okLine" -ForegroundColor $(if ($okLine.StartsWith("[KNOWN")) { "Cyan" } else { "Green" })
-        $reportLines.Add("  $okLine")
+        $suffix = if ($res.UserExceptions -and $res.UserExceptions.Count -gt 0) {
+            " (with $($res.UserExceptions.Count) verified user exception$([string](if ($res.UserExceptions.Count -gt 1) { 's' } else { '' })))"
+        } else { "" }
+        Write-Host "  $okLine$suffix" -ForegroundColor $(if ($okLine.StartsWith("[KNOWN")) { "Cyan" } else { "Green" })
+        $reportLines.Add("  $okLine$suffix")
     }
 }
 
@@ -1043,12 +1314,14 @@ if ($allJars.Count -gt 0) {
         }
 
         Clear-ModProgressBar
-        $res = Select-UnlistedHits $hits $scope
+        $jarHash = try { (Get-FileHash -LiteralPath $jar.FullName -Algorithm SHA256).Hash.ToLower() } catch { "" }
+        $expNotice = Get-ExpiredExceptionNotice $jarHash "" $jar.Name ""
+        $res = Select-UnlistedHits $hits $scope $jarHash $jar.Name
         $okLine = if (Test-InScope $scope $wsPZ3D) { "[KNOWN FRAMEWORK] $($jar.Name) (PZ3D Camera Engine - Verified 0 Malicious Payloads$origin)" }
             elseif (Test-InScope $scope $wsZombieBuddy) { "[KNOWN FRAMEWORK] $($jar.Name) (Mod Loader - Verified 0 Malicious Payloads$origin)" }
             elseif (Test-InScope $scope $wsRichPres) { "[OK] $($jar.Name) (Discord Rich Presence - Verified Clean$origin)" }
             else { "[OK] $($jar.Name) ($($jar.Directory.Name)$origin)" }
-        Write-ScanResult $jar.Name $jar.FullName $res $okLine
+        Write-ScanResult $jar.Name $jar.FullName $res $okLine $expNotice $jarHash
     }
 }
 
@@ -1137,6 +1410,9 @@ if ($doScanLooseClasses) {
 if ($knownFrameworksFound.Count -gt 0) {
     Write-Host "Known Native Frameworks: $($knownFrameworksFound.Count) Audited ($($knownFrameworksFound -join ', '))" -ForegroundColor Cyan
 }
+if ($statsUserExceptions -gt 0) {
+    Write-Host "User Exceptions:       $statsUserExceptions Active (SHA-256 Verified)" -ForegroundColor DarkCyan
+}
 
 if ($statsCritical -eq 0 -and $statsWarning -eq 0) {
     if ($knownFrameworksFound.Count -gt 0) {
@@ -1144,6 +1420,9 @@ if ($statsCritical -eq 0 -and $statsWarning -eq 0) {
         Write-Host "Notice: $($knownFrameworksFound.Count) known 3rd-party framework(s) detected with elevated system hooks ($($knownFrameworksFound -join ', ')). Verified clean." -ForegroundColor Cyan
     } else {
         Write-Host "`nRESULT: ALL TARGETS CLEAN. No threats or unauthorized modifications detected." -ForegroundColor Green
+    }
+    if ($statsUserExceptions -gt 0) {
+        Write-Host "Notice: $statsUserExceptions user exception(s) active and verified by SHA-256." -ForegroundColor DarkCyan
     }
 } elseif ($statsCritical -eq 0 -and $statsWarning -gt 0) {
     Write-Host "`nRESULT: CAUTION. $statsWarning item(s) have suspicious indicators requiring review." -ForegroundColor Yellow
@@ -1157,6 +1436,54 @@ try {
     [System.IO.File]::WriteAllLines($reportPath, $reportLines)
     Write-Host "`nDetailed report saved to: $reportPath" -ForegroundColor DarkGray
 } catch {}
+
+# Interactive Post-Scan Prompt for Warnings
+if (-not $env:PZMG_PROFILE -and $promptWarnings.Count -gt 0) {
+    Write-Host ""
+    $saveEx = Read-Host "Would you like to save any detected warning(s) as a trusted SHA-256 exception? [Y/N]"
+    if ($saveEx -match '^[Yy]') {
+        Write-Host "`nDetected Suspicious Items:" -ForegroundColor Cyan
+        $wIdx = 0
+        foreach ($pw in $promptWarnings) {
+            $wIdx++
+            Write-Host "  [$wIdx] $($pw.TargetName)" -ForegroundColor Yellow
+            Write-Host "      Entry:   $($pw.Hit.Entry)" -ForegroundColor DarkGray
+            Write-Host "      Warning: $($pw.Hit.Pattern)" -ForegroundColor DarkGray
+            $hashShow = if ($pw.FileHash) { $pw.FileHash } else { $pw.Hit.Hash }
+            Write-Host "      SHA-256: $hashShow" -ForegroundColor DarkGray
+        }
+        $picks = Read-Host "`nEnter item number(s) to trust (e.g. '1' or '1,2'), or [C] to cancel"
+        if ($picks -and $picks -notmatch '^[Cc]') {
+            $indices = $picks -split '[, ]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ }
+            foreach ($idx in $indices) {
+                if ($idx -ge 1 -and $idx -le $promptWarnings.Count) {
+                    $item = $promptWarnings[$idx - 1]
+                    $choiceType = Read-Host "Trust entire file '$($item.TargetName)' [F] or only this specific class [C]? [Default: F]"
+                    $targetHash = if ($choiceType -match '^[Cc]' -and $item.Hit.Hash) { $item.Hit.Hash } else {
+                        if ($item.FileHash) { $item.FileHash } else { $item.Hit.Hash }
+                    }
+                    $targetEntry = if ($choiceType -match '^[Cc]') { $item.Hit.Entry } else { "*" }
+                    $targetPattern = if ($choiceType -match '^[Cc]') { $item.Hit.Pattern } else { "*" }
+                    $comment = Read-Host "Enter optional note for this exception (e.g. '$($item.TargetName) LLM mod')"
+
+                    $newEx = [PSCustomObject]@{
+                        sha256 = $targetHash.ToLower()
+                        target = $item.TargetName
+                        entry = $targetEntry
+                        pattern = $targetPattern
+                        comment = $comment
+                        date_added = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+                    }
+                    $script:userExceptions.Add($newEx)
+                }
+            }
+            Save-UserExceptions
+            Write-Host "`n[+] Exceptions saved to $(Get-ExceptionsFilePath)!" -ForegroundColor Green
+            Write-Host "Future scans will verify this SHA-256 hash and suppress the warning as long as the file is unmodified." -ForegroundColor DarkCyan
+            Start-Sleep -Seconds 2
+        }
+    }
+}
 
 # Exit code for the --launch gate in the batch header: 20 = critical, 10 = warnings only, 0 = clean.
 # Anything else (e.g. 1 from a crash) means the scan did not finish and the gate asks before launching.

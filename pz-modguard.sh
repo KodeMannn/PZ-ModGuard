@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # =================================================================
 # Project Zomboid - Advanced Java & Binary Mod Guard (Linux Launcher)
-# Version 2.6.0
+# Version 2.8.0
 # =================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
