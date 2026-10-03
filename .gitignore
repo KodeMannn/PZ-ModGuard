@@ -2,3 +2,7 @@ pz_mod_scan_report.txt
 *.log
 .DS_Store
 Thumbs.db
+__pycache__/
+*.pyc
+*.tar.gz
+*.zip

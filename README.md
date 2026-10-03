@@ -3,7 +3,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/5rmsnwMPez)
-[![Platform](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20SteamOS-blue.svg)]()
 [![Game](https://img.shields.io/badge/Project%20Zomboid-Build%2042-darkgreen.svg)](https://projectzomboid.com/)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen.svg)]()
 [![AI Assisted](https://img.shields.io/badge/Coded%20with-Google%20Gemini-8E75C2?logo=google&logoColor=white)]()
@@ -18,12 +18,23 @@ Starting in Build 42, Project Zomboid mods can execute compiled Java bytecode (`
 
 ## ⚡ Quick Start
 
-1. **Download**: Grab [`PZ-ModGuard.bat`](https://github.com/KodeMannn/PZ-ModGuard/releases/latest) or clone this repo.
+### 🪟 Windows
+1. **Download**: Grab [`PZ-ModGuard.bat`](https://github.com/KodeMannn/PZ-ModGuard/releases/latest) (single-file, zero dependencies).
 2. **Run**: Double-click `PZ-ModGuard.bat` anywhere on your computer (desktop, workshop folder, or downloads).
 3. **Choose Profile**: Press **[ENTER]** for the default **Quick Scan** (~1.5s), or select **[2] Full Deep Scan** to include the core game engine.
 4. **Play Safe**: Review the color-coded report before launching Project Zomboid.
 
-> **Zero Dependencies:** Requires no Python, no Node.js, and no external tools. Runs out-of-the-box on Windows 10 & 11 via native PowerShell-Batch polyglot.
+### 🐧 Linux & SteamOS (Steam Deck)
+1. **Download**: Grab [`pz-modguard.sh`](https://github.com/KodeMannn/PZ-ModGuard/releases/latest) and [`pz_modguard.py`](https://github.com/KodeMannn/PZ-ModGuard/releases/latest), or download the `.tar.gz` bundle from releases.
+2. **Run**: Open a terminal in the folder and run:
+   ```bash
+   chmod +x pz-modguard.sh pz_modguard.py
+   ./pz-modguard.sh
+   ```
+   *(Or double-click `pz-modguard.sh` in your desktop file manager / Steam Deck Desktop Mode).*
+3. **Choose Profile**: Press **[ENTER]** for **Quick Scan** or select **[2] Full Deep Scan**.
+
+> **Zero Dependencies:** Requires no `pip`, no Node.js, and no external packages. Runs out-of-the-box on Windows 10 & 11 via native PowerShell-Batch polyglot, and on Linux/SteamOS via Python 3's built-in standard library (pre-installed on SteamOS and all standard Linux distros).
 
 ---
 
