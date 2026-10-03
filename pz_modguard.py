@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.6.0
+Version 2.7.0
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -23,7 +23,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
