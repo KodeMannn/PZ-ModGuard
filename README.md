@@ -13,7 +13,11 @@
 
 Starting in Build 42, Project Zomboid mods can execute compiled Java bytecode (`.jar` / `.class`) and native agents. Because traditional antivirus programs (like Windows Defender) scan Windows `.exe`/`.dll` binaries and are mostly blind to Java bytecode constant pools, **PZ-ModGuard** fills the gap with an in-memory JVM Constant Pool parser and heuristic threat detection engine.
 
-> ℹ️ **Disclaimer:** This project was developed and coded with the assistance of Google Gemini and Claude Code.
+> [!IMPORTANT]
+> **Security Disclaimer & Limitation of Liability:**  
+> PZ-ModGuard is an independent, community-developed security analysis tool provided on an **"AS IS"** basis without warranties of any kind. While it uses in-memory JVM constant pool parsing and heuristic pattern matching to detect known trojans and dangerous APIs, **no automated security scanner can guarantee 100% threat detection**. Malicious actors may develop novel evasion techniques or zero-day exploits. You install and execute third-party mods entirely at your own risk. The author(s) and contributor(s) disclaim all liability for any damages, compromised accounts, or data loss. See [Disclaimer & Limitation of Liability](#-disclaimer--limitation-of-liability) below for full details.
+> 
+> *Note: This project was developed and coded with the assistance of Google Gemini and Claude Code.*
 
 ---
 
@@ -176,6 +180,24 @@ If a legitimate mod triggers a false positive notice, please [open an issue](htt
 2. The relevant lines from your `pz_mod_scan_report.txt`.
 
 Pull requests to improve detection heuristics or performance are welcome!
+
+---
+
+## ⚠️ Disclaimer & Limitation of Liability
+
+**Please read this disclaimer carefully before using PZ-ModGuard.**
+
+1. **No Guarantee of Absolute Security**:  
+   PZ-ModGuard utilizes heuristic pattern matching, constant pool bytecode parsing, and known signature analysis. While highly effective at identifying known credential stealers, remote shells, webhooks, and unauthorized native binaries, **no security software can guarantee the detection of all threats, zero-day vulnerabilities, novel packing methods, or advanced obfuscation techniques**. A "CLEAN" scan result indicates that no known signatures or suspicious API patterns were flagged; it does **not** constitute an absolute guarantee or formal certification that a file is completely harmless or bug-free.
+
+2. **Assumption of Risk**:  
+   You acknowledge and agree that downloading, installing, and executing third-party Project Zomboid mods carries inherent risks. You assume full and sole responsibility for your use of this tool, your modding environment, and any third-party software you choose to run.
+
+3. **Limitation of Liability**:  
+   To the maximum extent permitted by applicable law, the author (`KodeMannn`), contributors, and associated parties shall **not be liable** for any direct, indirect, incidental, consequential, special, exemplary, or punitive damages (including, but not limited to, loss of data, loss of profits, system corruption, compromised user accounts, game bans, or hardware failure) arising out of or in connection with the use of, or inability to use, PZ-ModGuard or any third-party mod scanned by it.
+
+4. **Non-Affiliation**:  
+   PZ-ModGuard is an independent open-source project and is not affiliated with, endorsed by, sponsored by, or associated in any way with **The Indie Stone** (developers of Project Zomboid) or **Valve Corporation** (Steam). All trademarks, logos, and brand names are the property of their respective owners.
 
 ---
 

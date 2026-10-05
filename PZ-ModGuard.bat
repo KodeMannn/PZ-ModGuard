@@ -13,6 +13,8 @@ exit /b
 rem Steam launch option:  "C:\path\to\PZ-ModGuard.bat" --launch %command%
 rem Runs a Quick Scan. Only a clean result starts the game directly; anything found (or a failed scan) waits
 rem for the user to confirm, and anything but Y cancels the launch.
+rem DISCLAIMER: Provided "AS IS" for heuristic security analysis. No scanner can guarantee
+rem 100% threat detection against novel malware. Mod at your own risk. The authors assume no liability.
 :launch
 set "PZMG_PROFILE=1"
 set "PZMG_GAME="
@@ -47,6 +49,9 @@ Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -
 Write-Host "                        Version 2.8.0                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
+Write-Host "=================================================================" -ForegroundColor Cyan
+Write-Host " DISCLAIMER: Provided 'AS IS' for heuristic security analysis.   " -ForegroundColor DarkGray
+Write-Host " No scanner guarantees 100% threat detection. Mod at your risk.  " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
 
 # 1. JVM Class File Constant Pool Parser (compiled once at startup by the C# compiler built into Windows)
@@ -1109,6 +1114,8 @@ Write-Host "`nStarting $scanProfileName..." -ForegroundColor Green
 $reportLines = [System.Collections.Generic.List[string]]::new()
 $reportLines.Add("Project Zomboid Mod Security Scan Report - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $reportLines.Add("Scan Profile: $scanProfileName")
+$reportLines.Add("DISCLAIMER: Provided 'AS IS' without warranty of any kind. No scanner can guarantee")
+$reportLines.Add("100% threat detection. The authors assume no liability for damages or data loss.")
 $reportLines.Add("==========================================================================")
 
 $statsCritical = 0
@@ -1433,6 +1440,10 @@ if ($statsCritical -eq 0 -and $statsWarning -eq 0) {
 # Saved next to the script: under Steam --launch the working directory is the game folder
 $reportPath = if ($selfPath) { Join-Path (Split-Path $selfPath) "pz_mod_scan_report.txt" } else { ".\pz_mod_scan_report.txt" }
 try {
+    $reportLines.Add("")
+    $reportLines.Add("==========================================================================")
+    $reportLines.Add("Notice: PZ-ModGuard is an independent open-source tool and is not affiliated")
+    $reportLines.Add("with The Indie Stone or Valve Corporation. Scanned mods are run at your own risk.")
     [System.IO.File]::WriteAllLines($reportPath, $reportLines)
     Write-Host "`nDetailed report saved to: $reportPath" -ForegroundColor DarkGray
 } catch {}

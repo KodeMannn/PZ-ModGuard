@@ -2,10 +2,17 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.7.0
+Version 2.8.0
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
+
+DISCLAIMER & LIMITATION OF LIABILITY:
+PZ-ModGuard is an independent heuristic security analysis tool provided "AS IS" without warranty
+of any kind, express or implied. While it uses bytecode parsing and signature heuristics to detect
+known threats, no automated scanner can guarantee 100% detection of all zero-day threats or novel
+obfuscation techniques. Mod at your own risk. The author(s) and contributor(s) assume no liability
+for any damages, compromised accounts, or data loss. Not affiliated with The Indie Stone or Valve.
 """
 
 import fnmatch
@@ -1106,6 +1113,9 @@ def main(profile=None):
     print(f"{COLOR_GRAY}            Discord: https://discord.gg/5rmsnwMPez               {COLOR_RESET}")
     print(f"{COLOR_GRAY}   Coded with the assistance of Google Gemini and Claude Code    {COLOR_RESET}")
     print(f"{COLOR_CYAN}================================================================={COLOR_RESET}")
+    print(f"{COLOR_GRAY} DISCLAIMER: Provided 'AS IS' for heuristic security analysis.   {COLOR_RESET}")
+    print(f"{COLOR_GRAY} No scanner guarantees 100% threat detection. Mod at your risk.  {COLOR_RESET}")
+    print(f"{COLOR_CYAN}================================================================={COLOR_RESET}")
 
     targets = discover_targets()
 
@@ -1303,6 +1313,8 @@ def main(profile=None):
     report_lines = [
         f"Project Zomboid Mod Security Scan Report - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"Scan Profile: {scan_profile_name}",
+        "DISCLAIMER: Provided 'AS IS' without warranty of any kind. No scanner can guarantee",
+        "100% threat detection. The authors assume no liability for damages or data loss.",
         "=========================================================================="
     ]
     scan = Scan(report_lines)
@@ -1506,6 +1518,10 @@ def main(profile=None):
     # Saved next to the script: under Steam --launch the working directory is the game folder
     report_path = Path(__file__).resolve().parent / "pz_mod_scan_report.txt"
     try:
+        report_lines.append("")
+        report_lines.append("==========================================================================")
+        report_lines.append("Notice: PZ-ModGuard is an independent open-source tool and is not affiliated")
+        report_lines.append("with The Indie Stone or Valve Corporation. Scanned mods are run at your own risk.")
         report_path.write_text("\n".join(report_lines), encoding="utf-8")
         print(f"\n{COLOR_GRAY}Detailed report saved to: {report_path}{COLOR_RESET}")
     except Exception:

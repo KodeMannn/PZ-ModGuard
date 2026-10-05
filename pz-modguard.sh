@@ -2,6 +2,8 @@
 # =================================================================
 # Project Zomboid - Advanced Java & Binary Mod Guard (Linux Launcher)
 # Version 2.8.0
+# DISCLAIMER: Provided "AS IS" for heuristic security analysis. No scanner can guarantee
+# 100% threat detection against novel malware. Mod at your own risk. The authors assume no liability.
 # =================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
