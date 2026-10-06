@@ -133,6 +133,7 @@ The following mods have been inspected and classified for specific, legitimate f
 * **Viewpoint** (`3809306528`): Uses `ProcessBuilder` in `GpuBusy.class` solely to query Windows native `typeperf.exe` for GPU utilization statistics.
 * **PZ_Optimization** (`3805285544`): In-game settings menu buttons use helper calls to `powershell.exe` for game restart and backup restoration.
 * **CarPhysicsImproved** (`3796880595`): Non-executing internal developer build scripts (`build.ps1`/`test.ps1`) left in `media\src\` are classified as harmless dev artifacts.
+* **Viewpoint: True Weathers & Lighting** (`3813908957`): Non-executing internal developer build scripts (`build.ps1`/`build.sh`) left in `42\src\` are classified as harmless dev artifacts.
 
 > **Continuous Security Guarantee:** Pre-audited frameworks are **never** given a blind bypass. Every single `.class` file inside them is continuously scanned for Tier 1 hostile malware signatures (webhooks, stealers, droppers). If a known framework is ever tampered with or compromised, ModGuard will immediately raise a critical threat alarm.
 

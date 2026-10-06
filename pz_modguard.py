@@ -96,6 +96,7 @@ WS_PZOPT = "ws:3805285544"
 WS_VIEWPOINT = "ws:3809306528"
 WS_RICHPRES = "ws:3785376350"
 WS_CARPHYSICS = "ws:3796880595"
+WS_VIEWPOINT_TW = "ws:3813908957"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 KNOWN_NATIVE_FRAMEWORKS = {
@@ -114,7 +115,9 @@ KNOWN_DEV_SCRIPTS = [
     f"{WS_CARPHYSICS}|build.sh",
     f"{WS_CARPHYSICS}|test.sh",
     f"{WS_PZOPT}|install.ps1",
-    f"{WS_PZOPT}|install.sh"
+    f"{WS_PZOPT}|install.sh",
+    f"{WS_VIEWPOINT_TW}|build.ps1",
+    f"{WS_VIEWPOINT_TW}|build.sh"
 ]
 
 # Tier 1: matched against string literals in the class

@@ -336,6 +336,7 @@ $wsPzOpt       = "ws:3805285544"
 $wsViewpoint   = "ws:3809306528"
 $wsRichPres    = "ws:3785376350"
 $wsCarPhysics  = "ws:3796880595"
+$wsViewpointTW = "ws:3813908957"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 $knownNativeFrameworks = @{
@@ -350,7 +351,8 @@ $installManifests = @{ "pzopt-installed.txt" = $wsPzOpt }
 $knownDevScripts = @(
     "$wsCarPhysics|build.ps1",
     "$wsCarPhysics|test.ps1",
-    "$wsPzOpt|install.ps1"
+    "$wsPzOpt|install.ps1",
+    "$wsViewpointTW|build.ps1"
 )
 
 function Test-InScope($scope, $scopeList) {
