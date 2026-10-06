@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # =================================================================
 # Project Zomboid - Advanced Java & Binary Mod Guard (Linux Launcher)
-# Version 2.8.0
+# Version 2.8.1
 # DISCLAIMER: Provided "AS IS" for heuristic security analysis. No scanner can guarantee
 # 100% threat detection against novel malware. Mod at your own risk. The authors assume no liability.
 # =================================================================
