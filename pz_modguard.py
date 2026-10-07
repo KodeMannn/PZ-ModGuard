@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.8.1
+Version 2.8.2
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.8.1"
+VERSION = "2.8.2"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -116,6 +116,9 @@ KNOWN_DEV_SCRIPTS = [
     f"{WS_CARPHYSICS}|test.sh",
     f"{WS_PZOPT}|install.ps1",
     f"{WS_PZOPT}|install.sh",
+    f"{WS_PZOPT}|Uninstall-PZ-Optimization.cmd",
+    f"{WS_PZOPT}|Uninstall-PZ-Optimization.bat",
+    f"{WS_PZOPT}|uninstall.sh",
     f"{WS_VIEWPOINT_TW}|build.ps1",
     f"{WS_VIEWPOINT_TW}|build.sh"
 ]

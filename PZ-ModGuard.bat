@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.8.1"
+title "Project Zomboid - Java and Binary Mod Guard v2.8.2"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.8.1                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.8.2                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -352,6 +352,9 @@ $knownDevScripts = @(
     "$wsCarPhysics|build.ps1",
     "$wsCarPhysics|test.ps1",
     "$wsPzOpt|install.ps1",
+    "$wsPzOpt|Uninstall-PZ-Optimization.cmd",
+    "$wsPzOpt|Uninstall-PZ-Optimization.bat",
+    "$wsPzOpt|uninstall.sh",
     "$wsViewpointTW|build.ps1"
 )
 

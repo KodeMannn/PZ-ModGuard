@@ -131,7 +131,7 @@ The following mods have been inspected and classified for specific, legitimate f
 * **ZombieBuddy** (`3619862853` & `3807686870`): Uses ByteBuddy agent attachment (`ProcessBuilder`), native hook agent (`zbNative.dll`), and bundled cryptography libraries (`org.bouncycastle.*`).
 * **Discord Rich Presence** (`3785376350` / `ZomboidRichPresence`): Connects to the local Discord desktop application via local IPC sockets (`LinuxIPC.class -> Socket`) to display game status on Discord.
 * **Viewpoint** (`3809306528`): Uses `ProcessBuilder` in `GpuBusy.class` solely to query Windows native `typeperf.exe` for GPU utilization statistics.
-* **PZ_Optimization** (`3805285544`): In-game settings menu buttons use helper calls to `powershell.exe` for game restart and backup restoration.
+* **PZ_Optimization** (`3805285544`): In-game settings menu buttons use helper calls to `powershell.exe` for game restart and backup restoration. Manual installer (`install.ps1`/`install.sh`) and uninstaller helper scripts (`Uninstall-PZ-Optimization.cmd`/`.bat`/`uninstall.sh`) are classified as harmless install/dev artifacts.
 * **CarPhysicsImproved** (`3796880595`): Non-executing internal developer build scripts (`build.ps1`/`test.ps1`) left in `media\src\` are classified as harmless dev artifacts.
 * **Viewpoint: True Weathers & Lighting** (`3813908957`): Non-executing internal developer build scripts (`build.ps1`/`build.sh`) left in `42\src\` are classified as harmless dev artifacts.
 
