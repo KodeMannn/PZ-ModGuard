@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.8.2"
+title "Project Zomboid - Java and Binary Mod Guard v2.8.3"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.8.2                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.8.3                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -433,7 +433,9 @@ $scopedWhitelist = @(
     "$wsPzOpt|*pzopt/Updater.class|java/net/http/HttpClient.send*",
     "$wsPzOpt|*pzopt/UpdateDelta*.class|java/net/http/HttpClient.send*",
     "$wsPzOpt|*pzopt/Overrides.class|java/net/URL.openStream",
-    "$wsPzOpt|*gameStates/MainScreenState.class|java/lang/Runtime.exec"
+    "$wsPzOpt|*gameStates/MainScreenState.class|java/lang/Runtime.exec",
+    "$wsPzOpt|*Uninstall-PZ-Optimization.cmd|native",
+    "$wsPzOpt|*install.ps1|native"
 )
 
 function Test-IsWhitelisted($scope, $entryPath, $pattern, [switch]$Tier1) {
@@ -467,8 +469,11 @@ function Get-WorkshopScope($path) {
 function Get-FileScope($path) {
     $s = Get-WorkshopScope $path
     if ($s) { return $s }
+    $lp = $path.ToLower()
+    if ($manifestFiles.ContainsKey($lp)) { return $manifestFiles[$lp][1] }
     $h = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLower()
     if ($workshopHashes.ContainsKey($h)) { return $workshopHashes[$h] }
+    if ($manifestHashes.ContainsKey($h)) { return $manifestHashes[$h] }
     return ""
 }
 
@@ -1056,8 +1061,8 @@ function Add-ModFiles($root, $collectJars, $collectClasses, $collectNatives) {
         if ($f.Extension -eq ".jar") { if ($collectJars) { $allJars.Add($f) } }
         elseif ($f.Extension -eq ".class") { if ($collectClasses) { $allLooseClasses.Add($f) } }
         elseif ($collectNatives -and $nativeExts -contains $f.Extension -and $f.FullName -ne $selfPath) { $modNatives.Add($f) }
-        # Jars / native binaries inside Workshop items: byte-identical copies in a game folder inherit their scope
-        if ($doScanGameRoot -and $f.Extension -in ".jar", ".dll", ".so" -and (Get-WorkshopScope $f.FullName)) {
+        # Jars / native binaries / scripts inside Workshop items: byte-identical copies in a game folder inherit their scope
+        if ($doScanGameRoot -and $scanExts -contains $f.Extension -and (Get-WorkshopScope $f.FullName)) {
             $workshopHashes[(Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLower()] = Get-WorkshopScope $f.FullName
         }
     }
@@ -1204,18 +1209,18 @@ if ($doScanGameRoot) {
             }
         }
 
-        # A.2. Audit Native Binaries in Game Root
+        # A.2. Install manifests: class overrides a mod copied into the game folder, with their recorded SHA-256
+        $missing = Read-InstallManifests $gm
+        if ($missing.Count -gt 0) {
+            Write-Finding "info" "[i] Notice: $($missing.Count) file(s) listed in an install manifest are missing (e.g. $($missing[0]))"
+        }
+
+        # A.3. Audit Native Binaries in Game Root
         $natives = Get-ChildItem -Path "$gm\*" -Include *.dll, *.exe, *.bat, *.cmd, *.ps1, *.vbs -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -ne $selfPath }
         foreach ($n in $natives) {
             $isStock = ($stockPzDlls -contains $n.Name -or $stockPzScripts -contains $n.Name -or $n.Name -like "ProjectZomboid*.exe")
             if (-not $isStock) { Test-NativeBinary $n (Get-FileScope $n.FullName) " in Game Root" }
-        }
-
-        # A.3. Install manifests: class overrides a mod copied into the game folder, with their recorded SHA-256
-        $missing = Read-InstallManifests $gm
-        if ($missing.Count -gt 0) {
-            Write-Finding "info" "[i] Notice: $($missing.Count) file(s) listed in an install manifest are missing (e.g. $($missing[0]))"
         }
 
         # A.4. Base Game Engine Integrity & Malware Audit (projectzomboid.jar)

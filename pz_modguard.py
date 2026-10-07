@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.8.2
+Version 2.8.3
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.8.2"
+VERSION = "2.8.3"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -191,7 +191,9 @@ SCOPED_WHITELIST = [
     f"{WS_PZOPT}|*pzopt/Updater.class|java/net/http/HttpClient.send*",
     f"{WS_PZOPT}|*pzopt/UpdateDelta*.class|java/net/http/HttpClient.send*",
     f"{WS_PZOPT}|*pzopt/Overrides.class|java/net/URL.openStream",
-    f"{WS_PZOPT}|*gameStates/MainScreenState.class|java/lang/Runtime.exec"
+    f"{WS_PZOPT}|*gameStates/MainScreenState.class|java/lang/Runtime.exec",
+    f"{WS_PZOPT}|*Uninstall-PZ-Optimization.cmd|native",
+    f"{WS_PZOPT}|*install.ps1|native"
 ]
 
 STOCK_PZ_PACKAGES = {
@@ -494,10 +496,18 @@ def get_file_scope(path) -> str:
     s = get_workshop_scope(path)
     if s:
         return s
+    np = norm(path).lower()
+    if np in MANIFEST_FILES:
+        return MANIFEST_FILES[np][1]
     try:
-        return WORKSHOP_HASHES.get(sha256_file(path), "")
+        h = sha256_file(path)
+        if h in WORKSHOP_HASHES:
+            return WORKSHOP_HASHES[h]
+        if h in MANIFEST_HASHES:
+            return MANIFEST_HASHES[h]
     except OSError:
-        return ""
+        pass
+    return ""
 
 
 def read_install_manifests(gm: Path) -> list:
@@ -1269,8 +1279,8 @@ def main(profile=None):
                     all_loose_classes.append(f)
             elif natives and norm(f) not in SELF_PATHS:
                 mod_natives.append(f)
-            # Jars / native binaries inside Workshop items: byte-identical copies in a game folder inherit their scope
-            if do_scan_game_root and ext in (".jar", ".dll", ".so") and get_workshop_scope(f):
+            # Jars / native binaries / scripts inside Workshop items: byte-identical copies in a game folder inherit their scope
+            if do_scan_game_root and ext in SCAN_EXTS and get_workshop_scope(f):
                 WORKSHOP_HASHES[sha256_file(f)] = get_workshop_scope(f)
 
     if custom_path:
@@ -1349,18 +1359,18 @@ def main(profile=None):
                     if sp.is_file() and sp.stat().st_size < 1_000_000:
                         scan.jvm_options(sp.read_text(encoding="utf-8", errors="ignore"), s)
 
-            # A.2. Audit Native Binaries in Game Root
+            # A.2. Install manifests: class overrides a mod copied into the game folder, with their recorded SHA-256
+            missing = read_install_manifests(p_gm)
+            if missing:
+                scan.finding("info", f"[i] Notice: {len(missing)} file(s) listed in an install manifest are missing (e.g. {missing[0]})")
+
+            # A.3. Audit Native Binaries in Game Root
             for n in p_gm.glob("*"):
                 if n.is_file() and n.suffix.lower() in NATIVE_EXTS and norm(n) not in SELF_PATHS:
                     is_stock = (n.name in STOCK_DLLS or n.name in STOCK_SOS or n.name in STOCK_SCRIPTS
                                 or n.name.startswith("ProjectZomboid"))
                     if not is_stock:
                         scan.native_binary(n, get_file_scope(n), " in Game Root")
-
-            # A.3. Install manifests: class overrides a mod copied into the game folder, with their recorded SHA-256
-            missing = read_install_manifests(p_gm)
-            if missing:
-                scan.finding("info", f"[i] Notice: {len(missing)} file(s) listed in an install manifest are missing (e.g. {missing[0]})")
 
             # A.4. Base Game Engine Integrity & Malware Audit (projectzomboid.jar)
             if do_scan_engine:
