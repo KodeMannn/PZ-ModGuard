@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.8.3
+Version 2.8.4
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.8.3"
+VERSION = "2.8.4"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -166,8 +166,10 @@ SCOPED_WHITELIST = [
     f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/*|java/net/http/HttpClient.send*",
     f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/PatchTransformer.class|defineClass",
 
-    # Viewpoint: reads GPU utilization through Windows typeperf
+    # Viewpoint: GPU utilization (typeperf), Shenandoah GC probe, and vendor upscaler DLL downloads (FSR/DLSS/XeSS)
     f"{WS_VIEWPOINT}|viewpoint/platform/GpuBusy.class|java/lang/ProcessBuilder.start",
+    f"{WS_VIEWPOINT}|viewpoint/platform/Collector.class|java/lang/ProcessBuilder.start",
+    f"{WS_VIEWPOINT}|viewpoint/upscale/NativeDownload.class|java/net/URL.openConnection",
 
     # Discord Rich Presence: local IPC socket to the Discord desktop app
     f"{WS_RICHPRES}|*LinuxIPC*|java/net/Socket.<init>",

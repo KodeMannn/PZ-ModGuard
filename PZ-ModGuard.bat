@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.8.3"
+title "Project Zomboid - Java and Binary Mod Guard v2.8.4"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.8.3                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.8.4                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -408,8 +408,10 @@ $scopedWhitelist = @(
     "$wsZombieBuddy|me/zed_0xff/zombie_buddy/*|java/net/http/HttpClient.send*",
     "$wsZombieBuddy|me/zed_0xff/zombie_buddy/PatchTransformer.class|defineClass",
 
-    # Viewpoint: reads GPU utilization through Windows typeperf
+    # Viewpoint: GPU utilization (typeperf), Shenandoah GC probe, and vendor upscaler DLL downloads (FSR/DLSS/XeSS)
     "$wsViewpoint|viewpoint/platform/GpuBusy.class|java/lang/ProcessBuilder.start",
+    "$wsViewpoint|viewpoint/platform/Collector.class|java/lang/ProcessBuilder.start",
+    "$wsViewpoint|viewpoint/upscale/NativeDownload.class|java/net/URL.openConnection",
 
     # Discord Rich Presence: local IPC socket to the Discord desktop app
     "$wsRichPres|*LinuxIPC*|java/net/Socket.<init>",
