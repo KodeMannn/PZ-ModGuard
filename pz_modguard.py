@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.8.6
+Version 2.8.7
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.8.6"
+VERSION = "2.8.7"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -97,6 +97,7 @@ WS_VIEWPOINT = "ws:3809306528"
 WS_RICHPRES = "ws:3785376350"
 WS_CARPHYSICS = "ws:3796880595"
 WS_VIEWPOINT_TW = "ws:3813908957"
+WS_VIEWPOINT_TV = "ws:3821610732"
 WS_DEADWORKS = "ws:3825724093"
 WS_GRIDRV = "ws:3820158673"
 
@@ -172,6 +173,11 @@ SCOPED_WHITELIST = [
     f"{WS_VIEWPOINT}|viewpoint/platform/GpuBusy.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT}|viewpoint/platform/Collector.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT}|viewpoint/upscale/NativeDownload.class|java/net/URL.openConnection",
+
+    # Viewpoint - 3D Working TVs & Radios: video decoding engine launcher, yt-dlp playlist resolver, oEmbed title queries
+    f"{WS_VIEWPOINT_TV}|*com/viewpoint/tv/TVEngineLauncher.class|java/lang/ProcessBuilder.start",
+    f"{WS_VIEWPOINT_TV}|*com/viewpoint/tv/TVManager.class|java/lang/ProcessBuilder.start",
+    f"{WS_VIEWPOINT_TV}|*com/viewpoint/tv/TVManager.class|java/net/URL.openConnection",
 
     # Discord Rich Presence: local IPC socket to the Discord desktop app
     f"{WS_RICHPRES}|*LinuxIPC*|java/net/Socket.<init>",
