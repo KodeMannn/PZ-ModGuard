@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.8.4"
+title "Project Zomboid - Java and Binary Mod Guard v2.8.5"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.8.4                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.8.5                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -436,6 +436,8 @@ $scopedWhitelist = @(
     "$wsPzOpt|*pzopt/UpdateDelta*.class|java/net/http/HttpClient.send*",
     "$wsPzOpt|*pzopt/Overrides.class|java/net/URL.openStream",
     "$wsPzOpt|*gameStates/MainScreenState.class|java/lang/Runtime.exec",
+    "$wsPzOpt|*pzopt/BenchResults.class|java/lang/ProcessBuilder.start",
+    "$wsPzOpt|*pzopt/BenchSystem.class|java/lang/ProcessBuilder.start",
     "$wsPzOpt|*Uninstall-PZ-Optimization.cmd|native",
     "$wsPzOpt|*install.ps1|native"
 )
