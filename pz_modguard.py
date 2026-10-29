@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.8.7
+Version 2.8.8
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.8.7"
+VERSION = "2.8.8"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -77,7 +77,8 @@ LAUNCHER_SCRIPTS = [
 
 WHITELISTED_AGENTS = {
     "-agentlib:zbNative", "-agentlib:pz3dLoader",
-    "-agentlib:libzbNative", "-agentlib:libpz3dLoader"
+    "-agentlib:libzbNative", "-agentlib:libpz3dLoader",
+    "-agentlib:pzo_native64", "-agentlib:libpzo_native64"
 }
 
 STOCK_PZ_JARS = {"projectzomboid.jar"}
@@ -106,7 +107,9 @@ KNOWN_NATIVE_FRAMEWORKS = {
     "pz3dLoader.dll": (WS_PZ3D, "PZ3D 3D Camera Engine Hook (Native Windows C++ Binary)"),
     "libpz3dLoader.so": (WS_PZ3D, "PZ3D 3D Camera Engine Hook (Native Linux Binary)"),
     "zbNative.dll": (WS_ZOMBIEBUDDY, "ZombieBuddy Build 42 Native Hook Agent (Windows)"),
-    "libzbNative.so": (WS_ZOMBIEBUDDY, "ZombieBuddy Build 42 Native Hook Agent (Linux)")
+    "libzbNative.so": (WS_ZOMBIEBUDDY, "ZombieBuddy Build 42 Native Hook Agent (Linux)"),
+    "pzo_native64.dll": ("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent (Windows)"),
+    "libpzo_native64.so": ("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent (Linux)")
 }
 
 # Install manifests ("relative/path sha256" per line) that mods write into the game folder for their class overrides
@@ -209,7 +212,16 @@ SCOPED_WHITELIST = [
 
     # DeadWorks Vehicle Framework & GridRV: Coop host server launcher restarts GameServer with -javaagent for ZombieBuddy
     f"{WS_DEADWORKS}|*deadworks/vehicles/Launcher.class|java/lang/ProcessBuilder.start",
-    f"{WS_GRIDRV}|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start"
+    f"{WS_GRIDRV}|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start",
+
+    # PZO Engine Optimizer (prop11/PZO-Launcher): native AVX2 engine agent, GitHub updater, update dialog, mod loader
+    "pzo|*com/pzoptimizer/UpdateDialog.class|powershell.exe",
+    "pzo|*com/pzoptimizer/UpdateDialog.class|java/lang/ProcessBuilder.start",
+    "pzo|*com/pzoptimizer/UpdateDialog.class|java/net/URL.openConnection",
+    "pzo|*com/pzoptimizer/UpdateChecker.class|java/net/URL.openConnection",
+    "pzo|*com/pzoptimizer/JavaModLoader.class|java/net/URLClassLoader.<init>",
+    "pzo|*com/pzoptimizer/PZOEngineBridge.class|java/lang/Runtime.exec",
+    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/lang/Runtime.exec"
 ]
 
 STOCK_PZ_PACKAGES = {
@@ -515,6 +527,9 @@ def get_file_scope(path) -> str:
     np = norm(path).lower()
     if np in MANIFEST_FILES:
         return MANIFEST_FILES[np][1]
+    leaf = Path(path).name.lower()
+    if leaf in ("pzo_native64.dll", "libpzo_native64.so", "pzoptimengine.jar"):
+        return "pzo"
     try:
         h = sha256_file(path)
         if h in WORKSHOP_HASHES:
@@ -1445,6 +1460,8 @@ def main(profile=None):
                 ok_line = f"[KNOWN FRAMEWORK] {jar_path.name} (Mod Loader - Verified 0 Malicious Payloads{origin})"
             elif in_scope(scope, WS_RICHPRES):
                 ok_line = f"[OK] {jar_path.name} (Discord Rich Presence - Verified Clean{origin})"
+            elif in_scope(scope, "pzo"):
+                ok_line = f"[KNOWN FRAMEWORK] {jar_path.name} (PZO Engine Optimizer - Verified 0 Malicious Payloads)"
             else:
                 ok_line = f"[OK] {jar_path.name} ({jar_path.parent.name}{origin})"
             scan.result(jar_path.name, str(jar_path), critical, warning, ok_line, user_exceptions, exp_notice, jar_hash)

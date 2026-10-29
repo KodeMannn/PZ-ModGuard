@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.8.7"
+title "Project Zomboid - Java and Binary Mod Guard v2.8.8"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.8.7                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.8.8                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -325,7 +325,7 @@ $stockPzScripts = @(
     "ProjectZomboid64.bat", "ProjectZomboid32.bat", "ProjectZomboid64ShowConsole.bat",
     "ProjectZomboidOpenGLDebug64.bat", "ProjectZomboidServer.bat"
 )
-$whitelistedAgents = @("-agentlib:zbNative", "-agentlib:pz3dLoader")
+$whitelistedAgents = @("-agentlib:zbNative", "-agentlib:pz3dLoader", "-agentlib:pzo_native64")
 $selfPath = $env:PZMG_SELF
 
 # Trust is scoped to the Steam Workshop item a file comes from. Steam assigns these IDs, so a malicious mod
@@ -344,7 +344,9 @@ $wsGridRV      = "ws:3820158673"
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 $knownNativeFrameworks = @{
     "pz3dLoader.dll" = @($wsPZ3D, "PZ3D 3D Camera Engine Hook (Native C++ Binary)")
-    "zbNative.dll"   = @($wsZombieBuddy, "ZombieBuddy Build 42 Native Hook Agent")
+    "zbNative.dll"       = @($wsZombieBuddy, "ZombieBuddy Build 42 Native Hook Agent")
+    "pzo_native64.dll"   = @("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent")
+    "libpzo_native64.so" = @("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent")
 }
 $knownFrameworksFound = [System.Collections.Generic.List[string]]::new()
 
@@ -451,7 +453,16 @@ $scopedWhitelist = @(
 
     # DeadWorks Vehicle Framework & GridRV: Coop host server launcher restarts GameServer with -javaagent for ZombieBuddy
     "$wsDeadWorks|*deadworks/vehicles/Launcher.class|java/lang/ProcessBuilder.start",
-    "$wsGridRV|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start"
+    "$wsGridRV|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start",
+
+    # PZO Engine Optimizer (prop11/PZO-Launcher): native AVX2 engine agent, GitHub updater, update dialog, mod loader
+    "pzo|*com/pzoptimizer/UpdateDialog.class|powershell.exe",
+    "pzo|*com/pzoptimizer/UpdateDialog.class|java/lang/ProcessBuilder.start",
+    "pzo|*com/pzoptimizer/UpdateDialog.class|java/net/URL.openConnection",
+    "pzo|*com/pzoptimizer/UpdateChecker.class|java/net/URL.openConnection",
+    "pzo|*com/pzoptimizer/JavaModLoader.class|java/net/URLClassLoader.<init>",
+    "pzo|*com/pzoptimizer/PZOEngineBridge.class|java/lang/Runtime.exec",
+    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/lang/Runtime.exec"
 )
 
 function Test-IsWhitelisted($scope, $entryPath, $pattern, [switch]$Tier1) {
@@ -487,6 +498,8 @@ function Get-FileScope($path) {
     if ($s) { return $s }
     $lp = $path.ToLower()
     if ($manifestFiles.ContainsKey($lp)) { return $manifestFiles[$lp][1] }
+    $leaf = Split-Path $path -Leaf
+    if ($leaf.ToLower() -in "pzo_native64.dll", "libpzo_native64.so", "pzoptimengine.jar") { return "pzo" }
     $h = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLower()
     if ($workshopHashes.ContainsKey($h)) { return $workshopHashes[$h] }
     if ($manifestHashes.ContainsKey($h)) { return $manifestHashes[$h] }
@@ -1353,6 +1366,7 @@ if ($allJars.Count -gt 0) {
         $okLine = if (Test-InScope $scope $wsPZ3D) { "[KNOWN FRAMEWORK] $($jar.Name) (PZ3D Camera Engine - Verified 0 Malicious Payloads$origin)" }
             elseif (Test-InScope $scope $wsZombieBuddy) { "[KNOWN FRAMEWORK] $($jar.Name) (Mod Loader - Verified 0 Malicious Payloads$origin)" }
             elseif (Test-InScope $scope $wsRichPres) { "[OK] $($jar.Name) (Discord Rich Presence - Verified Clean$origin)" }
+            elseif (Test-InScope $scope "pzo") { "[KNOWN FRAMEWORK] $($jar.Name) (PZO Engine Optimizer - Verified 0 Malicious Payloads)" }
             else { "[OK] $($jar.Name) ($($jar.Directory.Name)$origin)" }
         Write-ScanResult $jar.Name $jar.FullName $res $okLine $expNotice $jarHash
     }
