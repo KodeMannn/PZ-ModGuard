@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.8.5
+Version 2.8.6
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.8.5"
+VERSION = "2.8.6"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -97,6 +97,8 @@ WS_VIEWPOINT = "ws:3809306528"
 WS_RICHPRES = "ws:3785376350"
 WS_CARPHYSICS = "ws:3796880595"
 WS_VIEWPOINT_TW = "ws:3813908957"
+WS_DEADWORKS = "ws:3825724093"
+WS_GRIDRV = "ws:3820158673"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 KNOWN_NATIVE_FRAMEWORKS = {
@@ -197,7 +199,11 @@ SCOPED_WHITELIST = [
     f"{WS_PZOPT}|*pzopt/BenchResults.class|java/lang/ProcessBuilder.start",
     f"{WS_PZOPT}|*pzopt/BenchSystem.class|java/lang/ProcessBuilder.start",
     f"{WS_PZOPT}|*Uninstall-PZ-Optimization.cmd|native",
-    f"{WS_PZOPT}|*install.ps1|native"
+    f"{WS_PZOPT}|*install.ps1|native",
+
+    # DeadWorks Vehicle Framework & GridRV: Coop host server launcher restarts GameServer with -javaagent for ZombieBuddy
+    f"{WS_DEADWORKS}|*deadworks/vehicles/Launcher.class|java/lang/ProcessBuilder.start",
+    f"{WS_GRIDRV}|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start"
 ]
 
 STOCK_PZ_PACKAGES = {

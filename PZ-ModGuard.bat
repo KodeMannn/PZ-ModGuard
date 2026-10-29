@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.8.5"
+title "Project Zomboid - Java and Binary Mod Guard v2.8.6"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.8.5                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.8.6                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -337,6 +337,8 @@ $wsViewpoint   = "ws:3809306528"
 $wsRichPres    = "ws:3785376350"
 $wsCarPhysics  = "ws:3796880595"
 $wsViewpointTW = "ws:3813908957"
+$wsDeadWorks   = "ws:3825724093"
+$wsGridRV      = "ws:3820158673"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 $knownNativeFrameworks = @{
@@ -439,7 +441,11 @@ $scopedWhitelist = @(
     "$wsPzOpt|*pzopt/BenchResults.class|java/lang/ProcessBuilder.start",
     "$wsPzOpt|*pzopt/BenchSystem.class|java/lang/ProcessBuilder.start",
     "$wsPzOpt|*Uninstall-PZ-Optimization.cmd|native",
-    "$wsPzOpt|*install.ps1|native"
+    "$wsPzOpt|*install.ps1|native",
+
+    # DeadWorks Vehicle Framework & GridRV: Coop host server launcher restarts GameServer with -javaagent for ZombieBuddy
+    "$wsDeadWorks|*deadworks/vehicles/Launcher.class|java/lang/ProcessBuilder.start",
+    "$wsGridRV|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start"
 )
 
 function Test-IsWhitelisted($scope, $entryPath, $pattern, [switch]$Tier1) {
