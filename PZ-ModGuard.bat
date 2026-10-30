@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.8.8"
+title "Project Zomboid - Java and Binary Mod Guard v2.9.0"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.8.8                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.9.0                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -122,7 +122,62 @@ public static class PzmgClassFile {
     }
 
     static readonly Regex Archive = new Regex(@"\.(jar|zip)$", RegexOptions.IgnoreCase);
-    static readonly Regex Native = new Regex(@"\.(dll|exe|so|dylib|sys|bat|cmd|ps1|vbs)$", RegexOptions.IgnoreCase);
+    static readonly Regex Native = new Regex(@"\.(dll|exe|so|dylib|sys|scr|com|msi|bat|cmd|ps1|vbs|vbe|jse|wsf|wsh|hta|sh)$", RegexOptions.IgnoreCase);
+
+    public static bool IsClassMagic(byte[] b) {
+        return b != null && b.Length >= 10 && b[0] == 0xCA && b[1] == 0xFE && b[2] == 0xBA && b[3] == 0xBE;
+    }
+
+    public static bool IsZipMagic(byte[] b) {
+        return b != null && b.Length >= 4 && b[0] == 0x50 && b[1] == 0x4B && b[2] == 0x03 && b[3] == 0x04;
+    }
+
+    public static bool IsNativeMagic(byte[] b) {
+        if (b == null || b.Length < 4) return false;
+        if (b[0] == 0x7F && b[1] == (byte)'E' && b[2] == (byte)'L' && b[3] == (byte)'F') return true;
+        uint m = ((uint)b[0] << 24) | ((uint)b[1] << 16) | ((uint)b[2] << 8) | b[3];
+        if (m == 0xFEEDFACEu || m == 0xFEEDFACFu || m == 0xCEFAEDFEu || m == 0xCFFAEDFEu) return true;
+        if (b.Length >= 0x40 && b[0] == (byte)'M' && b[1] == (byte)'Z') {
+            int pe = b[0x3C] | (b[0x3D] << 8) | (b[0x3E] << 16) | (b[0x3F] << 24);
+            if (pe > 0 && pe <= b.Length - 4 && b[pe] == (byte)'P' && b[pe + 1] == (byte)'E' && b[pe + 2] == 0 && b[pe + 3] == 0) return true;
+        }
+        return false;
+    }
+
+    public static string[] ScanNativeBytes(byte[] b, string[] t1, string[] dangerApis) {
+        if (b == null || b.Length == 0) return new string[0];
+        string ascii = Encoding.GetEncoding("ISO-8859-1").GetString(b);
+        string utf16 = Encoding.Unicode.GetString(b);
+        var found = new List<string>();
+        if (t1 != null) {
+            foreach (string p in t1) {
+                if (ascii.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    utf16.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) found.Add(p);
+            }
+        }
+        if (dangerApis != null) {
+            foreach (string a in dangerApis) {
+                if (ascii.IndexOf(a, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    utf16.IndexOf(a, StringComparison.OrdinalIgnoreCase) >= 0) found.Add(a);
+            }
+        }
+        return found.ToArray();
+    }
+
+    public static void ScanLuaBytes(byte[] b, string entry, string[] luaT1, List<string[]> hits) {
+        if (b == null) return;
+        string hash = Sha256(b);
+        if (entry.EndsWith(".lbc", StringComparison.OrdinalIgnoreCase) ||
+            (b.Length >= 4 && b[0] == 0x1B && b[1] == (byte)'L' && b[2] == (byte)'u' && b[3] == (byte)'a')) {
+            hits.Add(new[] { "2", entry, "lua-bytecode", entry + " -> precompiled Lua bytecode hides script source", hash });
+        }
+        string txt = Encoding.GetEncoding("ISO-8859-1").GetString(b);
+        foreach (string p in luaT1) {
+            if (txt.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) {
+                hits.Add(new[] { "1", entry, p, entry + " -> Lua script contains '" + p + "'", hash });
+            }
+        }
+    }
 
     // One recursive walk collecting files with any of the given extensions. Unreadable folders are skipped and
     // junctions / symlinks are not followed.
@@ -153,17 +208,28 @@ public static class PzmgClassFile {
                                    List<string[]> hits, List<string> classHashes) {
         using (var z = new ZipArchive(stream, ZipArchiveMode.Read)) {
             foreach (ZipArchiveEntry e in z.Entries) {
+                if (string.IsNullOrEmpty(e.Name) && e.FullName.EndsWith("/")) continue;
                 string name = prefix + e.FullName;
-                if (e.FullName.EndsWith(".class")) {
-                    byte[] b = ReadAll(e);
-                    if (classHashes != null) classHashes.Add(Sha256(b));
+                byte[] b = ReadAll(e);
+                bool isClsExt = e.FullName.EndsWith(".class", StringComparison.OrdinalIgnoreCase);
+                if (isClsExt || IsClassMagic(b)) {
+                    if (!isClsExt) {
+                        hits.Add(new[] { "2", name, "disguised-class", name + " -> disguised Java class file (CAFEBABE header)", Sha256(b) });
+                    }
+                    if (classHashes != null && isClsExt) classHashes.Add(Sha256(b));
                     ScanClass(b, name, t1, t2Refs, t2Names, hits);
-                } else if (Archive.IsMatch(e.FullName)) {
-                    try { ScanArchive(new MemoryStream(ReadAll(e)), name + "!/", t1, t2Refs, t2Names, hits, null); }
-                    catch (Exception) { hits.Add(new[] { "2", name, "nested-archive", name + " -> nested archive could not be opened", "" }); }
-                } else if (Native.IsMatch(e.FullName)) {
-                    byte[] nb = ReadAll(e);
-                    hits.Add(new[] { "2", name, "native", name + " -> embedded native binary / script", Sha256(nb) });
+                } else if (Archive.IsMatch(e.FullName) || IsZipMagic(b)) {
+                    try { ScanArchive(new MemoryStream(b), name + "!/", t1, t2Refs, t2Names, hits, null); }
+                    catch (Exception) {
+                        if (Archive.IsMatch(e.FullName))
+                            hits.Add(new[] { "2", name, "nested-archive", name + " -> nested archive could not be opened", "" });
+                    }
+                } else if (Native.IsMatch(e.FullName) || IsNativeMagic(b)) {
+                    string nh = Sha256(b);
+                    foreach (string p in ScanNativeBytes(b, t1, null)) {
+                        hits.Add(new[] { "1", name, p, name + " -> embedded native/script contains '" + p + "'", nh });
+                    }
+                    hits.Add(new[] { "2", name, "native", name + " -> embedded native binary / script", nh });
                 }
             }
         }
@@ -321,9 +387,12 @@ $stockPzDlls = @(
     "ZNetJNI32.dll", "ZNetNoSteam64.dll", "ZNetNoSteam32.dll"
 )
 $stockPzJars = @("projectzomboid.jar")
+$stockPzExes = @(
+    "ProjectZomboid64.exe", "ProjectZomboid32.exe", "ProjectZomboid64ShowConsole.exe"
+)
 $stockPzScripts = @(
     "ProjectZomboid64.bat", "ProjectZomboid32.bat", "ProjectZomboid64ShowConsole.bat",
-    "ProjectZomboidOpenGLDebug64.bat", "ProjectZomboidServer.bat"
+    "ProjectZomboidOpenGLDebug64.bat", "ProjectZomboidOpenGLDebug32.bat", "ProjectZomboidServer.bat"
 )
 $whitelistedAgents = @("-agentlib:zbNative", "-agentlib:pz3dLoader", "-agentlib:pzo_native64")
 $selfPath = $env:PZMG_SELF
@@ -343,10 +412,11 @@ $wsGridRV      = "ws:3820158673"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 $knownNativeFrameworks = @{
-    "pz3dLoader.dll" = @($wsPZ3D, "PZ3D 3D Camera Engine Hook (Native C++ Binary)")
-    "zbNative.dll"       = @($wsZombieBuddy, "ZombieBuddy Build 42 Native Hook Agent")
-    "pzo_native64.dll"   = @("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent")
-    "libpzo_native64.so" = @("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent")
+    "pz3dLoader.dll"        = @($wsPZ3D, "PZ3D 3D Camera Engine Hook (Native C++ Binary)")
+    "zbNative.dll"          = @($wsZombieBuddy, "ZombieBuddy Build 42 Native Hook Agent")
+    "pzo_native64.dll"      = @("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent")
+    "libpzo_native64.so"    = @("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent")
+    "libpzo_native64.dylib" = @("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent")
 }
 $knownFrameworksFound = [System.Collections.Generic.List[string]]::new()
 
@@ -382,7 +452,24 @@ $tier1Patterns = @(
     "cmd.exe", "powershell.exe", "wscript.exe", "cscript.exe",
     "certutil", "bitsadmin", "curl.exe",
     "\AppData\Roaming\discord", "\AppData\Local\Google\Chrome", "\AppData\Roaming\Mozilla",
-    "Start Menu\Programs\Startup"
+    "Start Menu\Programs\Startup",
+    # Linux-specific persistence & reverse shell signatures
+    "/bin/bash -i", "/bin/sh -i", "nc -e", "/dev/tcp/",
+    ".config/discord", ".mozilla/firefox", ".config/google-chrome",
+    # Forward-slash & cross-platform credential / token / wallet stealer targets
+    "AppData/Roaming/discord", "AppData/Local/Google/Chrome", "AppData/Roaming/Mozilla",
+    "discord/Local Storage/leveldb", "discordcanary", "discordptb",
+    "Google/Chrome/User Data", "Microsoft/Edge/User Data", "BraveSoftware/Brave-Browser",
+    "Opera Software/Opera Stable", "Local Extension Settings",
+    "Login Data", "Local State", "encrypted_key", "cookies.sqlite",
+    "config/loginusers.vdf", "wallet.dat", ".ssh/id_rsa", ".ssh/id_ed25519",
+    # Additional Windows LOLBins & persistence keys
+    "pwsh.exe", "mshta.exe", "regsvr32.exe", "rundll32.exe", "schtasks.exe",
+    "vssadmin.exe", "wmic.exe", "CurrentVersion\Run", "CurrentVersion/Run",
+    "Start Menu/Programs/Startup",
+    # Webhook & data exfiltration relays
+    "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st"
 )
 
 # Tier 2: exact field/method references ("owner.member") resolved from the constant pool...
@@ -392,15 +479,54 @@ $tier2Refs = @(
     "javax/crypto/Cipher.init",
     "java/net/Socket.<init>", "java/net/ServerSocket.<init>",
     "java/net/URL.openConnection", "java/net/URL.openStream",
-    "java/net/http/HttpClient.send", "java/net/http/HttpClient.sendAsync"
+    "java/net/http/HttpClient.send", "java/net/http/HttpClient.sendAsync",
+    # Native library loading & FFI (JNI, JNA, LWJGL, Panama)
+    "java/lang/System.load", "java/lang/System.loadLibrary",
+    "java/lang/Runtime.load", "java/lang/Runtime.loadLibrary",
+    "com/sun/jna/Native.load", "com/sun/jna/Native.loadLibrary",
+    "com/sun/jna/Function.getFunction",
+    "org/lwjgl/system/Library.loadNative",
+    "java/lang/foreign/Linker.nativeLinker",
+    # Desktop shell, ScriptEngine & JNDI injection
+    "java/awt/Desktop.open", "java/awt/Desktop.browse", "java/awt/Desktop.edit",
+    "javax/script/ScriptEngine.eval", "javax/script/ScriptEngineManager.getEngineByName",
+    "javax/naming/InitialContext.lookup",
+    # NIO sockets, UDP & bundled engine HTTP/webhook clients (OkHttp3, Javacord)
+    "java/nio/channels/SocketChannel.open", "java/nio/channels/AsynchronousSocketChannel.open",
+    "java/nio/channels/DatagramChannel.open", "java/net/DatagramSocket.<init>",
+    "okhttp3/OkHttpClient.newCall",
+    "org/javacord/api/DiscordApiBuilder.<init>", "org/javacord/api/WebhookBuilder.<init>",
+    # JVM agent self-attach & runtime bytecode redefinition
+    "com/sun/tools/attach/VirtualMachine.attach",
+    "java/lang/instrument/Instrumentation.redefineClasses",
+    "java/lang/instrument/Instrumentation.retransformClasses"
 )
 # ...plus whole constant-pool names, which also catch these being called through reflection
-$tier2Names = @("defineClass", "defineHiddenClass", "java.lang.ProcessBuilder", "java.lang.Runtime")
+$tier2Names = @(
+    "defineClass", "defineHiddenClass", "java.lang.ProcessBuilder", "java.lang.Runtime",
+    "sun/misc/Unsafe", "jdk/internal/misc/Unsafe"
+)
+
+$nativeDangerApis = @(
+    "URLDownloadToFile", "WinHttpOpen", "WinHttpConnect", "WinHttpSendRequest",
+    "InternetOpenUrl", "HttpSendRequest", "CryptUnprotectData",
+    "VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread",
+    "ShellExecuteA", "ShellExecuteW", "ShellExecuteEx", "WinExec"
+)
+
+$luaTier1Patterns = @(
+    "discord.com/api/webhooks", "discordapp.com/api/webhooks",
+    "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
+    "api.telegram.org", "pastebin.com/raw", "iplogger", "grabify",
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st",
+    "os.execute", "io.popen", "package.loadlib"
+)
 
 # "Scope|EntryPathPattern|PatternPattern". A rule whose last field is "*" never hides a Tier 1 hit.
 $scopedWhitelist = @(
     # Base game: bundled Javacord library contains the Discord webhook API URL
     "engine|org/javacord/*|discord.com/api/webhooks",
+    "engine|windows/*/org/lwjgl/tinyfd/lwjgl_tinyfd.dll|*.exe",
 
     # ZombieBuddy: Java mod loader. Bundled ByteBuddy / ClassGraph / BouncyCastle library code
     "$wsZombieBuddy|net/bytebuddy/*|*",
@@ -412,16 +538,26 @@ $scopedWhitelist = @(
     "$wsZombieBuddy|me/zed_0xff/zombie_buddy/frontend/SwingModApprovalFrontend.class|java/lang/ProcessBuilder.start",
     "$wsZombieBuddy|me/zed_0xff/zombie_buddy/*|java/net/http/HttpClient.send*",
     "$wsZombieBuddy|me/zed_0xff/zombie_buddy/PatchTransformer.class|defineClass",
+    "$wsZombieBuddy|me/zed_0xff/zombie_buddy/PatchTransformer.class|java/lang/instrument/Instrumentation.redefineClasses",
+    "$wsZombieBuddy|me/zed_0xff/zombie_buddy/PatchEngine.class|java/lang/instrument/Instrumentation.retransformClasses",
+    "$wsZombieBuddy|me/zed_0xff/zombie_buddy/WatchesAPI.class|java/lang/instrument/Instrumentation.retransformClasses",
+    "$wsZombieBuddy|me/zed_0xff/zombie_buddy/frontend/SwingApprovalMain.class|java/awt/Desktop.browse",
 
     # Viewpoint: GPU utilization (typeperf), Shenandoah GC probe, and vendor upscaler DLL downloads (FSR/DLSS/XeSS)
     "$wsViewpoint|viewpoint/platform/GpuBusy.class|java/lang/ProcessBuilder.start",
     "$wsViewpoint|viewpoint/platform/Collector.class|java/lang/ProcessBuilder.start",
     "$wsViewpoint|viewpoint/upscale/NativeDownload.class|java/net/URL.openConnection",
+    "$wsViewpoint|viewpoint/platform/HotReload.class|java/lang/instrument/Instrumentation.redefineClasses",
+    "$wsViewpoint|viewpoint/upscale/Natives.class|org/lwjgl/system/Library.loadNative",
+    "$wsViewpoint|org/lwjgl/vulkan/VK.class|org/lwjgl/system/Library.loadNative",
 
     # Viewpoint - 3D Working TVs & Radios: video decoding engine launcher, yt-dlp playlist resolver, oEmbed title queries
     "$wsViewpointTV|*com/viewpoint/tv/TVEngineLauncher.class|java/lang/ProcessBuilder.start",
     "$wsViewpointTV|*com/viewpoint/tv/TVManager.class|java/lang/ProcessBuilder.start",
     "$wsViewpointTV|*com/viewpoint/tv/TVManager.class|java/net/URL.openConnection",
+    "$wsViewpointTV|*tv_engine.bin|native",
+    "$wsViewpointTV|*yt-dlp.bin|native",
+    "$wsViewpointTV|*ffmpeg.bin|native",
 
     # Discord Rich Presence: local IPC socket to the Discord desktop app
     "$wsRichPres|*LinuxIPC*|java/net/Socket.<init>",
@@ -462,7 +598,13 @@ $scopedWhitelist = @(
     "pzo|*com/pzoptimizer/UpdateChecker.class|java/net/URL.openConnection",
     "pzo|*com/pzoptimizer/JavaModLoader.class|java/net/URLClassLoader.<init>",
     "pzo|*com/pzoptimizer/PZOEngineBridge.class|java/lang/Runtime.exec",
-    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/lang/Runtime.exec"
+    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/lang/Runtime.exec",
+    "pzo|*com/pzoptimizer/PZOEngineBridge.class|java/awt/Desktop.open",
+    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/awt/Desktop.browse",
+    "pzo|*com/pzoptimizer/PZONative.class|java/lang/System.load*",
+    "pzo|*com/pzoptimizer/server/LinuxSteamServerSanitizer.class|java/lang/System.load",
+    "pzo|*com/pzoptimizer/PZOptimAgent.class|java/lang/instrument/Instrumentation.retransformClasses",
+    "pzo|*com/pzoptimizer/*.class|sun/misc/Unsafe"
 )
 
 function Test-IsWhitelisted($scope, $entryPath, $pattern, [switch]$Tier1) {
@@ -499,7 +641,12 @@ function Get-FileScope($path) {
     $lp = $path.ToLower()
     if ($manifestFiles.ContainsKey($lp)) { return $manifestFiles[$lp][1] }
     $leaf = Split-Path $path -Leaf
-    if ($leaf.ToLower() -in "pzo_native64.dll", "libpzo_native64.so", "pzoptimengine.jar") { return "pzo" }
+    $parentDir = Split-Path $path -Parent
+    if ($leaf.ToLower() -in @("pzo_native64.dll", "libpzo_native64.so", "libpzo_native64.dylib", "pzoptimengine.jar")) {
+        foreach ($gm in $targets.GameRoot) {
+            if ([string]::Equals($parentDir.TrimEnd('\'), $gm.TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)) { return "pzo" }
+        }
+    }
     $h = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLower()
     if ($workshopHashes.ContainsKey($h)) { return $workshopHashes[$h] }
     if ($manifestHashes.ContainsKey($h)) { return $manifestHashes[$h] }
@@ -1067,14 +1214,18 @@ switch ($choice) {
 
 $allJars = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 $allLooseClasses = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+$allLuaFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 # Loose classes in a game folder sit on the classpath ahead of projectzomboid.jar ("." comes first), so they
 # replace engine code at launch. They are scanned in every profile that audits the game folder.
 $gameRootClasses = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 $modNatives = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 $doScanGameRoot = ($doScanLauncher -or $doScanEngine)
 
-$nativeExts = @(".exe", ".dll", ".vbs", ".bat", ".cmd", ".ps1")
-$scanExts = @(".jar", ".class", ".so") + $nativeExts
+$nativeExts = @(
+    ".exe", ".dll", ".so", ".dylib", ".sys", ".scr", ".com", ".msi",
+    ".vbs", ".vbe", ".jse", ".wsf", ".wsh", ".hta", ".bat", ".cmd", ".ps1", ".sh"
+)
+$scanExts = @(".jar", ".class", ".lua", ".lbc", ".bin") + $nativeExts
 
 function Test-IsUnderUserMods($path) {
     foreach ($um in $targets.UserMods) {
@@ -1083,15 +1234,32 @@ function Test-IsUnderUserMods($path) {
     return $false
 }
 
-# Sorts one folder walk into jars, loose classes and native binaries / scripts
+# Sorts one folder walk into jars, loose classes, Lua scripts, and native binaries / scripts
 function Add-ModFiles($root, $collectJars, $collectClasses, $collectNatives) {
     foreach ($path in [PzmgClassFile]::FindFiles($root, $scanExts)) {
         $f = [System.IO.FileInfo]$path
-        if ($f.Extension -eq ".jar") { if ($collectJars) { $allJars.Add($f) } }
-        elseif ($f.Extension -eq ".class") { if ($collectClasses) { $allLooseClasses.Add($f) } }
-        elseif ($collectNatives -and $nativeExts -contains $f.Extension -and $f.FullName -ne $selfPath) { $modNatives.Add($f) }
+        $ext = $f.Extension.ToLower()
+        if ($ext -eq ".jar") { if ($collectJars) { $allJars.Add($f) } }
+        elseif ($ext -eq ".class") { if ($collectClasses) { $allLooseClasses.Add($f) } }
+        elseif ($ext -in @(".lua", ".lbc")) { if ($collectJars) { $allLuaFiles.Add($f) } }
+        elseif ($ext -eq ".bin") {
+            if ($collectNatives -and -not $f.Name.StartsWith("chunkdata_", [System.StringComparison]::OrdinalIgnoreCase) -and -not $f.Name.StartsWith("worldmap", [System.StringComparison]::OrdinalIgnoreCase)) {
+                try {
+                    $fs = [System.IO.File]::OpenRead($f.FullName)
+                    try {
+                        $hdr = New-Object byte[] 64
+                        $nRead = $fs.Read($hdr, 0, 64)
+                        if ($nRead -lt 64) { $hdr = $hdr[0..([math]::Max(0, $nRead - 1))] }
+                        if ([PzmgClassFile]::IsNativeMagic($hdr) -or ($nRead -ge 2 -and $hdr[0] -eq 0x23 -and $hdr[1] -eq 0x21)) {
+                            $modNatives.Add($f)
+                        }
+                    } finally { $fs.Dispose() }
+                } catch {}
+            }
+        }
+        elseif ($collectNatives -and $nativeExts -contains $ext -and $f.FullName -ne $selfPath) { $modNatives.Add($f) }
         # Jars / native binaries / scripts inside Workshop items: byte-identical copies in a game folder inherit their scope
-        if ($doScanGameRoot -and $scanExts -contains $f.Extension -and (Get-WorkshopScope $f.FullName)) {
+        if ($doScanGameRoot -and ($ext -eq ".jar" -or $nativeExts -contains $ext) -and (Get-WorkshopScope $f.FullName)) {
             $workshopHashes[(Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLower()] = Get-WorkshopScope $f.FullName
         }
     }
@@ -1099,10 +1267,16 @@ function Add-ModFiles($root, $collectJars, $collectClasses, $collectNatives) {
 
 if ($customPath) {
     if ((Get-Item $customPath) -is [System.IO.FileInfo]) {
-        if ($customPath.EndsWith(".jar", [System.StringComparison]::OrdinalIgnoreCase)) {
-            $allJars.Add((Get-Item $customPath))
-        } elseif ($customPath.EndsWith(".class", [System.StringComparison]::OrdinalIgnoreCase)) {
-            $allLooseClasses.Add((Get-Item $customPath))
+        $cpItem = Get-Item $customPath
+        $cpExt = $cpItem.Extension.ToLower()
+        if ($cpExt -eq ".jar") {
+            $allJars.Add($cpItem)
+        } elseif ($cpExt -eq ".class") {
+            $allLooseClasses.Add($cpItem)
+        } elseif ($cpExt -in @(".lua", ".lbc")) {
+            $allLuaFiles.Add($cpItem)
+        } elseif ($nativeExts -contains $cpExt) {
+            $modNatives.Add($cpItem)
         }
     } else {
         Add-ModFiles $customPath $true $true $true
@@ -1139,6 +1313,9 @@ if ($gameRootClasses.Count -gt 0) {
 }
 if ($allLooseClasses.Count -gt 0) {
     Write-Host "  - $($allLooseClasses.Count) Loose Class Overrides" -ForegroundColor DarkCyan
+}
+if ($allLuaFiles.Count -gt 0) {
+    Write-Host "  - $($allLuaFiles.Count) Mod Lua Scripts & Bytecode" -ForegroundColor DarkCyan
 }
 if ($doScanLauncher) {
     Write-Host "  - Game Launcher Config (ProjectZomboid64.json, launcher .bat files, Java environment variables)" -ForegroundColor DarkCyan
@@ -1186,6 +1363,15 @@ function Test-NativeBinary($n, $scope, $where) {
     if ($knownNativeFrameworks.ContainsKey($n.Name)) {
         $expected, $desc = $knownNativeFrameworks[$n.Name]
         if (Test-InScope $scope $expected) {
+            $bad = @()
+            try {
+                $nb = [System.IO.File]::ReadAllBytes($n.FullName)
+                $bad = [PzmgClassFile]::ScanNativeBytes($nb, $tier1Patterns, $nativeDangerApis)
+            } catch {}
+            if ($bad.Count -gt 0) {
+                Write-Finding "critical" "[CRITICAL THREAT] Compromised Native Framework $($n.Name) ($($n.FullName)): contains '$($bad[0])'"
+                return
+            }
             if (-not $knownFrameworksFound.Contains($n.Name)) { $knownFrameworksFound.Add($n.Name) }
             Write-Host "  [KNOWN NATIVE FRAMEWORK] $($n.Name) ($desc)" -ForegroundColor Cyan
             $reportLines.Add("  [KNOWN NATIVE FRAMEWORK] $($n.FullName) - $desc")
@@ -1220,17 +1406,23 @@ if ($doScanGameRoot) {
 
         # A.1. Launcher Audit: JSON config, launcher scripts
         if ($doScanLauncher) {
-            $jsonPath = "$gm\ProjectZomboid64.json"
-            if (Test-Path -LiteralPath $jsonPath) {
-                try {
-                    $cfg = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
-                    if ($cfg.vmArgs) { Test-JvmOptions ($cfg.vmArgs -join ' ') "ProjectZomboid64.json" }
-                    foreach ($cp in @($cfg.classpath)) {
-                        if ($cp -and $cp -ne "." -and $stockPzJars -notcontains $cp) {
-                            Write-Finding "info" "[i] Notice: Launcher classpath includes '$cp' (scanned below)"
+            foreach ($cfgName in @("ProjectZomboid64.json", "ProjectZomboid32.json")) {
+                $jsonPath = "$gm\$cfgName"
+                if (Test-Path -LiteralPath $jsonPath) {
+                    try {
+                        $cfg = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
+                        $mc = "$($cfg.mainClass)".Trim()
+                        if ($mc -and $mc -notin @("zombie.gameStates.MainScreenState", "zombie/gameStates/MainScreenState")) {
+                            Write-Finding "critical" "[CRITICAL] Hijacked mainClass in ${cfgName}: $mc"
                         }
-                    }
-                } catch {}
+                        if ($cfg.vmArgs) { Test-JvmOptions ($cfg.vmArgs -join ' ') $cfgName }
+                        foreach ($cp in @($cfg.classpath)) {
+                            if ($cp -and $cp -ne "." -and $stockPzJars -notcontains $cp) {
+                                Write-Finding "info" "[i] Notice: Launcher classpath includes '$cp' (scanned below)"
+                            }
+                        }
+                    } catch {}
+                }
             }
             foreach ($s in $stockPzScripts) {
                 $sp = Join-Path $gm $s
@@ -1245,10 +1437,10 @@ if ($doScanGameRoot) {
         }
 
         # A.3. Audit Native Binaries in Game Root
-        $natives = Get-ChildItem -Path "$gm\*" -Include *.dll, *.exe, *.bat, *.cmd, *.ps1, *.vbs -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -ne $selfPath }
+        $natives = Get-ChildItem -File -LiteralPath $gm -ErrorAction SilentlyContinue |
+            Where-Object { $nativeExts -contains $_.Extension.ToLower() -and $_.FullName -ne $selfPath }
         foreach ($n in $natives) {
-            $isStock = ($stockPzDlls -contains $n.Name -or $stockPzScripts -contains $n.Name -or $n.Name -like "ProjectZomboid*.exe")
+            $isStock = ($stockPzDlls -contains $n.Name -or $stockPzScripts -contains $n.Name -or $stockPzExes -contains $n.Name)
             if (-not $isStock) { Test-NativeBinary $n (Get-FileScope $n.FullName) " in Game Root" }
         }
 
@@ -1431,6 +1623,40 @@ if ($allLooseClasses.Count -gt 0) {
     }
 }
 
+# 8.3. EXECUTION E: Scan Mod Lua Scripts & Bytecode
+if ($allLuaFiles.Count -gt 0) {
+    Write-Host "`nScanning $($allLuaFiles.Count) Mod Lua Scripts & Bytecode..." -ForegroundColor DarkGray
+    $luaFlagged = 0
+    $lIdx = 0
+    foreach ($lf in $allLuaFiles) {
+        $lIdx++
+        if ($lIdx % 200 -eq 0 -or $lIdx -eq $allLuaFiles.Count) {
+            Show-ModProgressBar $lIdx $allLuaFiles.Count "Checking Lua scripts ($lIdx/$($allLuaFiles.Count))"
+        }
+        try { $bytes = [System.IO.File]::ReadAllBytes($lf.FullName) } catch { continue }
+        $raw = [System.Collections.Generic.List[string[]]]::new()
+        [PzmgClassFile]::ScanLuaBytes($bytes, "$($lf.Directory.Name)/$($lf.Name)", $luaTier1Patterns, $raw)
+        if ($raw.Count -gt 0) {
+            Clear-ModProgressBar
+            $hits = [System.Collections.Generic.List[object]]::new()
+            Add-RawHits $hits $raw
+            $scope = Get-WorkshopScope $lf.FullName
+            $lHash = [PzmgClassFile]::Sha256($bytes)
+            $expNotice = Get-ExpiredExceptionNotice $lHash "" $lf.Name ""
+            $res = Select-UnlistedHits $hits $scope $lHash $lf.Name
+            if ($res.Critical.Count -gt 0 -or $res.Warning.Count -gt 0 -or $res.UserExceptions.Count -gt 0 -or $expNotice) {
+                $luaFlagged++
+                Write-ScanResult $lf.Name $lf.FullName $res "[OK] $($lf.Name) clean." $expNotice $lHash
+            }
+        }
+    }
+    Clear-ModProgressBar
+    if ($luaFlagged -eq 0) {
+        Write-Host "  [OK] All $($allLuaFiles.Count) Mod Lua scripts verified clean (0 malicious webhooks or sandbox escapes)" -ForegroundColor Green
+        $reportLines.Add("  [OK] All $($allLuaFiles.Count) Mod Lua scripts verified clean.")
+    }
+}
+
 # 9. Final Audit Summary
 Write-Host "`n=================================================================" -ForegroundColor Cyan
 Write-Host "                        AUDIT SUMMARY                            " -ForegroundColor Cyan
@@ -1445,6 +1671,7 @@ if ($doScanEngine) {
     Write-Host "Base Game Engines:     Skipped (Included in Full Deep Scan)"
 }
 Write-Host "Total Mod JARs:        $($allJars.Count) Scanned"
+Write-Host "Total Mod Lua Files:   $($allLuaFiles.Count) Scanned"
 if ($doScanGameRoot) {
     Write-Host "Game Folder Overrides: $($gameRootClasses.Count) Scanned"
 }

@@ -96,7 +96,9 @@ PZ-ModGuard features 5 selectable scan profiles and 2 Steam automation tools:
   * **Tier 2 (WARNING - Yellow):** Evasion and dropper patterns (in-memory classloaders like `ClassLoader.defineClass` used by modular trojans such as Fractureiser, string encryption ciphers like `javax.crypto.Cipher`, and raw TCP sockets).
   * **Tier 3 (CLEAN - Green):** Audited game reflection, rendering hooks, and math libraries.
 * **🛡️ Workshop-Scoped Whitelisting:** Whitelist rules are `(Workshop ID | ClassPath | Pattern)`. Trust comes from the Steam Workshop item a file lives in, which a mod cannot fake, not from folder, file or class names. Copies in the game folder are trusted only when byte-identical to the Workshop file, or (for class overrides) when they match the SHA-256 in the installing mod's manifest. Tier 1 hits are never blanket-whitelisted.
-* **📦 Full Surface Coverage:** Inspects `.jar` packages (including nested jars and embedded native binaries), loose `.class` files in the game folder (they load ahead of `projectzomboid.jar`, checked against install manifests such as *PZ_Optimization*'s `pzopt-installed.txt`), and native binaries / scripts.
+* **📦 Full Surface Coverage (Java, Native Binaries & Lua):** Inspects `.jar` packages (including nested jars and embedded native binaries), loose `.class` files in the game folder (they load ahead of `projectzomboid.jar`, checked against install manifests such as *PZ_Optimization*'s `pzopt-installed.txt`), native binaries / scripts, and mod `.lua` / `.lbc` Lua bytecode files.
+* **🧬 Magic-Byte Disguised Payload Detection (v2.9.0):** Inspects actual file header magic bytes (`0xCAFEBABE`, PE `MZ`+`PE\0\0`, ELF `\x7fELF`, Mach-O, and ZIP `PK\x03\x04`) inside archives and `.bin` files so malware disguised as `.png`, `.dat`, or `.bin` cannot evade inspection.
+* **🔍 Native Binary Deep Payload Inspection (v2.9.0):** Scans both standalone native frameworks (`.dll`/`.so`/`.dylib`) and embedded native binaries across ASCII and UTF-16LE encodings for exfiltration URLs, credential paths, and dangerous Win32 injection/network APIs (`URLDownloadToFile`, `WinHttpOpen`, `CryptUnprotectData`, `CreateRemoteThread`, `ShellExecute`).
 * **🔁 Automatic Pre-Launch Steam Scanning:** Launches game through `--launch %command%`. Automatically audits mods prior to launch; clean launches proceed instantly, while threats or unmanaged overrides halt launch until reviewed.
 * **📊 Visual UX & Progress Bar:** Profile selector menu, live ASCII percentage progress bar, Windows notification bar integration, and persistent terminal output.
 * **📝 Automated Audit Logs:** Automatically saves a timestamped scan report to `pz_mod_scan_report.txt` for easy review or sharing.
@@ -116,11 +118,17 @@ PZ-ModGuard features 5 selectable scan profiles and 2 Steam automation tools:
 | **Unauthorized JVM Agents & Overrides** | Unapproved `-agentlib:`, `-agentpath:`, `-javaagent:`, or `-Xbootclasspath` in launcher JSON, `.bat`/`.sh` scripts, or environment variables (`JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`, `JDK_JAVA_OPTIONS`) | **CRITICAL** |
 | **Tampered Game Folder Overrides** | Loose `.class` files in game directory with SHA-256 hash mismatches against mod install manifests (`pzopt-installed.txt`) | **CRITICAL** |
 | **Corrupt / Disguised Bytecode** | Malformed constant pools, truncated `.class` files, or non-class payloads claiming `0xCAFEBABE` | **WARNING** |
-| **Bytecode Process Spawning** | Resolved constant pool method calls to `java/lang/ProcessBuilder.start`, `java/lang/Runtime.exec` | **WARNING** |
-| **Network Exfiltration APIs** | Resolved constant pool method calls to `java/net/http/HttpClient.send`, `sendAsync`, `java/net/URL.openConnection`, `openStream` | **WARNING** |
-| **In-Memory Droppers (Fractureiser)** | `java/net/URLClassLoader.<init>`, constant pool references to `defineClass`, `defineHiddenClass` | **WARNING** |
+| **Compromised Native Frameworks** | Known native `.dll`/`.so` binaries containing webhooks, stealer paths, or Win32 dropper/injection APIs (`URLDownloadToFile`, `WinHttpSendRequest`, `CryptUnprotectData`, `CreateRemoteThread`) | **CRITICAL** |
+| **Launcher `mainClass` Hijacking** | Modified `mainClass` entrypoint in `ProjectZomboid64.json` / `ProjectZomboid32.json` | **CRITICAL** |
+| **Lua Script Exfiltration & Escapes** | Mod `.lua` scripts containing Discord/Telegram webhooks, exfiltration relays, or Lua C/shell escapes (`os.execute`, `io.popen`, `package.loadlib`) | **CRITICAL** |
+| **Precompiled Lua Bytecode (`.lbc`)** | Compiled Lua bytecode (`\x1bLua` header or `.lbc` files) hiding script source code | **WARNING** |
+| **Disguised Archive Payloads** | Java `.class` (`0xCAFEBABE`), native PE/ELF/Mach-O binaries, or nested ZIPs disguised with fake extensions (`.png`, `.dat`, `.bin`) | **WARNING / CRITICAL** |
+| **Native Loading & FFI (JNI/JNA/LWJGL)** | `System.load`, `System.loadLibrary`, `Runtime.load*`, JNA `Native.load*` / `Function.getFunction`, LWJGL `Library.loadNative`, Java 21+ `Linker.nativeLinker` | **WARNING** |
+| **Bytecode Process & Shell Spawning** | `ProcessBuilder.start`, `Runtime.exec`, `Desktop.open` / `browse` / `edit`, `ScriptEngine.eval`, JNDI `InitialContext.lookup` | **WARNING** |
+| **Network & Engine Exfiltration APIs** | `HttpClient.send*`, `URL.openConnection` / `openStream`, NIO `SocketChannel` / `DatagramChannel`, plus bundled `okhttp3/OkHttpClient.newCall` and `org/javacord` builders | **WARNING** |
+| **In-Memory Droppers & Self-Attach** | `URLClassLoader.<init>`, `defineClass`, `defineHiddenClass`, `VirtualMachine.attach`, `Instrumentation.redefineClasses` / `retransformClasses`, `sun/misc/Unsafe` | **WARNING** |
 | **Obfuscated Ciphers / Encryption** | `javax/crypto/Cipher.init`, `SecretKeySpec` | **WARNING** |
-| **Raw Network Sockets** | `java/net/Socket.<init>`, `java/net/ServerSocket.<init>` | **WARNING** |
+| **Raw Network Sockets** | `java/net/Socket.<init>`, `java/net/ServerSocket.<init>`, `java/net/DatagramSocket.<init>` | **WARNING** |
 
 ---
 

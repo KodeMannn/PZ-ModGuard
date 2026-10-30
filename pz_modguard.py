@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.8.8
+Version 2.9.0
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.8.8"
+VERSION = "2.9.0"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -65,7 +65,7 @@ STOCK_SCRIPTS = {
     "ProjectZomboid64.bat", "ProjectZomboid32.bat", "ProjectZomboid64ShowConsole.bat",
     "ProjectZomboidOpenGLDebug64.bat", "ProjectZomboidServer.bat",
     "projectzomboid.sh", "ProjectZomboid64", "ProjectZomboid32",
-    "ProjectZomboid64.exe", "ProjectZomboid32.exe", "ProjectZomboid64ShowConsole.exe"
+    "ProjectZomboid64.exe", "ProjectZomboid32.exe", "ProjectZomboid64ShowConsole.exe", "ProjectZomboidOpenGLDebug32.bat", "start-server.sh"
 }
 
 # Launcher scripts whose text is checked for JVM options (Windows .bat and Linux shell launchers)
@@ -109,7 +109,8 @@ KNOWN_NATIVE_FRAMEWORKS = {
     "zbNative.dll": (WS_ZOMBIEBUDDY, "ZombieBuddy Build 42 Native Hook Agent (Windows)"),
     "libzbNative.so": (WS_ZOMBIEBUDDY, "ZombieBuddy Build 42 Native Hook Agent (Linux)"),
     "pzo_native64.dll": ("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent (Windows)"),
-    "libpzo_native64.so": ("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent (Linux)")
+    "libpzo_native64.so": ("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent (Linux)"),
+    "libpzo_native64.dylib": ("pzo", "PZO Engine Optimizer Build 42 AVX2 Native Hook Agent (macOS)")
 }
 
 # Install manifests ("relative/path sha256" per line) that mods write into the game folder for their class overrides
@@ -139,7 +140,21 @@ TIER_1_PATTERNS = [
     "Start Menu\\Programs\\Startup",
     # Linux-specific persistence & reverse shell signatures
     "/bin/bash -i", "/bin/sh -i", "nc -e", "/dev/tcp/",
-    ".config/discord", ".mozilla/firefox", ".config/google-chrome"
+    ".config/discord", ".mozilla/firefox", ".config/google-chrome",
+    # Forward-slash & cross-platform credential / token / wallet stealer targets
+    "AppData/Roaming/discord", "AppData/Local/Google/Chrome", "AppData/Roaming/Mozilla",
+    "discord/Local Storage/leveldb", "discordcanary", "discordptb",
+    "Google/Chrome/User Data", "Microsoft/Edge/User Data", "BraveSoftware/Brave-Browser",
+    "Opera Software/Opera Stable", "Local Extension Settings",
+    "Login Data", "Local State", "encrypted_key", "cookies.sqlite",
+    "config/loginusers.vdf", "wallet.dat", ".ssh/id_rsa", ".ssh/id_ed25519",
+    # Additional Windows LOLBins & persistence keys
+    "pwsh.exe", "mshta.exe", "regsvr32.exe", "rundll32.exe", "schtasks.exe",
+    "vssadmin.exe", "wmic.exe", "CurrentVersion\\Run", "CurrentVersion/Run",
+    "Start Menu/Programs/Startup",
+    # Webhook & data exfiltration relays
+    "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st"
 ]
 TIER_1_LOWER = [(p, p.lower()) for p in TIER_1_PATTERNS]
 
@@ -150,16 +165,57 @@ TIER_2_REFS = [
     "javax/crypto/Cipher.init",
     "java/net/Socket.<init>", "java/net/ServerSocket.<init>",
     "java/net/URL.openConnection", "java/net/URL.openStream",
-    "java/net/http/HttpClient.send", "java/net/http/HttpClient.sendAsync"
+    "java/net/http/HttpClient.send", "java/net/http/HttpClient.sendAsync",
+    # Native library loading & FFI (JNI, JNA, LWJGL, Panama)
+    "java/lang/System.load", "java/lang/System.loadLibrary",
+    "java/lang/Runtime.load", "java/lang/Runtime.loadLibrary",
+    "com/sun/jna/Native.load", "com/sun/jna/Native.loadLibrary",
+    "com/sun/jna/Function.getFunction",
+    "org/lwjgl/system/Library.loadNative",
+    "java/lang/foreign/Linker.nativeLinker",
+    # Desktop shell, ScriptEngine & JNDI injection
+    "java/awt/Desktop.open", "java/awt/Desktop.browse", "java/awt/Desktop.edit",
+    "javax/script/ScriptEngine.eval", "javax/script/ScriptEngineManager.getEngineByName",
+    "javax/naming/InitialContext.lookup",
+    # NIO sockets, UDP & bundled engine HTTP/webhook clients (OkHttp3, Javacord)
+    "java/nio/channels/SocketChannel.open", "java/nio/channels/AsynchronousSocketChannel.open",
+    "java/nio/channels/DatagramChannel.open", "java/net/DatagramSocket.<init>",
+    "okhttp3/OkHttpClient.newCall",
+    "org/javacord/api/DiscordApiBuilder.<init>", "org/javacord/api/WebhookBuilder.<init>",
+    # JVM agent self-attach & runtime bytecode redefinition
+    "com/sun/tools/attach/VirtualMachine.attach",
+    "java/lang/instrument/Instrumentation.redefineClasses",
+    "java/lang/instrument/Instrumentation.retransformClasses"
 ]
 # ...plus whole constant-pool names, which also catch these being called through reflection
-TIER_2_NAMES = ["defineClass", "defineHiddenClass", "java.lang.ProcessBuilder", "java.lang.Runtime"]
+TIER_2_NAMES = [
+    "defineClass", "defineHiddenClass", "java.lang.ProcessBuilder", "java.lang.Runtime",
+    "sun/misc/Unsafe", "jdk/internal/misc/Unsafe"
+]
+
+NATIVE_DANGER_APIS = [
+    "URLDownloadToFile", "WinHttpOpen", "WinHttpConnect", "WinHttpSendRequest",
+    "InternetOpenUrl", "HttpSendRequest", "CryptUnprotectData",
+    "VirtualAllocEx", "WriteProcessMemory", "CreateRemoteThread",
+    "ShellExecuteA", "ShellExecuteW", "ShellExecuteEx", "WinExec"
+]
+NATIVE_DANGER_LOWER = [(a, a.lower()) for a in NATIVE_DANGER_APIS]
+
+LUA_TIER_1_PATTERNS = [
+    "discord.com/api/webhooks", "discordapp.com/api/webhooks",
+    "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
+    "api.telegram.org", "pastebin.com/raw", "iplogger", "grabify",
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st",
+    "os.execute", "io.popen", "package.loadlib"
+]
+LUA_TIER_1_LOWER = [(p, p.lower()) for p in LUA_TIER_1_PATTERNS]
 
 # "Scope|EntryPathPattern|PatternPattern" (fnmatch-style, case-insensitive). A rule whose last field is "*"
 # never hides a Tier 1 hit.
 SCOPED_WHITELIST = [
     # Base game: bundled Javacord library contains the Discord webhook API URL
     "engine|org/javacord/*|discord.com/api/webhooks",
+    "engine|windows/*/org/lwjgl/tinyfd/lwjgl_tinyfd.dll|*.exe",
 
     # ZombieBuddy: Java mod loader. Bundled ByteBuddy / ClassGraph / BouncyCastle library code
     f"{WS_ZOMBIEBUDDY}|net/bytebuddy/*|*",
@@ -171,16 +227,26 @@ SCOPED_WHITELIST = [
     f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/frontend/SwingModApprovalFrontend.class|java/lang/ProcessBuilder.start",
     f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/*|java/net/http/HttpClient.send*",
     f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/PatchTransformer.class|defineClass",
+    f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/PatchTransformer.class|java/lang/instrument/Instrumentation.redefineClasses",
+    f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/PatchEngine.class|java/lang/instrument/Instrumentation.retransformClasses",
+    f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/WatchesAPI.class|java/lang/instrument/Instrumentation.retransformClasses",
+    f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/frontend/SwingApprovalMain.class|java/awt/Desktop.browse",
 
     # Viewpoint: GPU utilization (typeperf), Shenandoah GC probe, and vendor upscaler DLL downloads (FSR/DLSS/XeSS)
     f"{WS_VIEWPOINT}|viewpoint/platform/GpuBusy.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT}|viewpoint/platform/Collector.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT}|viewpoint/upscale/NativeDownload.class|java/net/URL.openConnection",
+    f"{WS_VIEWPOINT}|viewpoint/platform/HotReload.class|java/lang/instrument/Instrumentation.redefineClasses",
+    f"{WS_VIEWPOINT}|viewpoint/upscale/Natives.class|org/lwjgl/system/Library.loadNative",
+    f"{WS_VIEWPOINT}|org/lwjgl/vulkan/VK.class|org/lwjgl/system/Library.loadNative",
 
     # Viewpoint - 3D Working TVs & Radios: video decoding engine launcher, yt-dlp playlist resolver, oEmbed title queries
     f"{WS_VIEWPOINT_TV}|*com/viewpoint/tv/TVEngineLauncher.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT_TV}|*com/viewpoint/tv/TVManager.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT_TV}|*com/viewpoint/tv/TVManager.class|java/net/URL.openConnection",
+    f"{WS_VIEWPOINT_TV}|*tv_engine.bin|native",
+    f"{WS_VIEWPOINT_TV}|*yt-dlp.bin|native",
+    f"{WS_VIEWPOINT_TV}|*ffmpeg.bin|native",
 
     # Discord Rich Presence: local IPC socket to the Discord desktop app
     f"{WS_RICHPRES}|*LinuxIPC*|java/net/Socket.<init>",
@@ -221,7 +287,13 @@ SCOPED_WHITELIST = [
     "pzo|*com/pzoptimizer/UpdateChecker.class|java/net/URL.openConnection",
     "pzo|*com/pzoptimizer/JavaModLoader.class|java/net/URLClassLoader.<init>",
     "pzo|*com/pzoptimizer/PZOEngineBridge.class|java/lang/Runtime.exec",
-    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/lang/Runtime.exec"
+    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/lang/Runtime.exec",
+    "pzo|*com/pzoptimizer/PZOEngineBridge.class|java/awt/Desktop.open",
+    "pzo|*com/pzoptimizer/PZOEntrypoint.class|java/awt/Desktop.browse",
+    "pzo|*com/pzoptimizer/PZONative.class|java/lang/System.load*",
+    "pzo|*com/pzoptimizer/server/LinuxSteamServerSanitizer.class|java/lang/System.load",
+    "pzo|*com/pzoptimizer/PZOptimAgent.class|java/lang/instrument/Instrumentation.retransformClasses",
+    "pzo|*com/pzoptimizer/*.class|sun/misc/Unsafe"
 ]
 
 STOCK_PZ_PACKAGES = {
@@ -230,10 +302,14 @@ STOCK_PZ_PACKAGES = {
     "org", "oshi", "pl", "se", "windows", "macos", "linux", "zombie"
 }
 
-NATIVE_EXTS = {".exe", ".dll", ".so", ".vbs", ".bat", ".cmd", ".ps1", ".sh"}
-SCAN_EXTS = {".jar", ".class"} | NATIVE_EXTS
+NATIVE_EXTS = {
+    ".exe", ".dll", ".so", ".dylib", ".sys", ".scr", ".com", ".msi",
+    ".vbs", ".vbe", ".jse", ".wsf", ".wsh", ".hta", ".bat", ".cmd", ".ps1", ".sh"
+}
+SCAN_EXTS = {".jar", ".class", ".lua", ".lbc", ".bin"} | NATIVE_EXTS
+
 ARCHIVE_RE = re.compile(r"\.(jar|zip)$", re.I)
-EMBEDDED_NATIVE_RE = re.compile(r"\.(dll|exe|so|dylib|sys|bat|cmd|ps1|vbs|sh)$", re.I)
+EMBEDDED_NATIVE_RE = re.compile(r"\.(dll|exe|so|dylib|sys|scr|com|msi|bat|cmd|ps1|vbs|vbe|jse|wsf|wsh|hta|sh)$", re.I)
 WORKSHOP_RE = re.compile(r"[\\/]workshop[\\/]content[\\/]108600[\\/](\d+)[\\/]")
 
 
@@ -456,6 +532,51 @@ def scan_class(data: bytes, entry: str, hits: list):
             hits.append((2, entry, p, f"{entry} -> references '{p}'", class_hash))
 
 
+def is_class_magic(b: bytes) -> bool:
+    return len(b) >= 10 and b[:4] == b"\xca\xfe\xba\xbe"
+
+
+def is_zip_magic(b: bytes) -> bool:
+    return len(b) >= 4 and b[:4] == b"PK\x03\x04"
+
+
+def is_native_magic(b: bytes) -> bool:
+    if len(b) < 4:
+        return False
+    hdr = b[:4]
+    if hdr == b"\x7fELF" or hdr in (b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe"):
+        return True
+    if len(b) >= 0x40 and b[:2] == b"MZ":
+        pe_off = int.from_bytes(b[0x3c:0x40], "little")
+        if 0 < pe_off <= len(b) - 4 and b[pe_off:pe_off + 4] == b"PE\x00\x00":
+            return True
+    return False
+
+
+def scan_native_bytes(b: bytes, check_danger_apis: bool = True) -> list:
+    ascii_low = b.decode("latin-1").lower()
+    utf16_low = b.decode("utf-16le", errors="ignore").lower()
+    found = []
+    for p, p_low in TIER_1_LOWER:
+        if p_low in ascii_low or p_low in utf16_low:
+            found.append(p)
+    if check_danger_apis:
+        for a, a_low in NATIVE_DANGER_LOWER:
+            if a_low in ascii_low or a_low in utf16_low:
+                found.append(a)
+    return found
+
+
+def scan_lua_bytes(b: bytes, entry: str, hits: list):
+    lhash = hashlib.sha256(b).hexdigest()
+    if entry.lower().endswith(".lbc") or (len(b) >= 4 and b[:4] == b"\x1bLua"):
+        hits.append((2, entry, "lua-bytecode", f"{entry} -> precompiled Lua bytecode hides script source", lhash))
+    txt_low = b.decode("latin-1").lower()
+    for p, p_low in LUA_TIER_1_LOWER:
+        if p_low in txt_low:
+            hits.append((1, entry, p, f"{entry} -> Lua script contains '{p}'", lhash))
+
+
 def scan_archive(z: zipfile.ZipFile, prefix: str, hits: list, class_hashes=None):
     """Scans every entry of a zip/jar, recursing into nested archives and flagging embedded native binaries.
     class_hashes (optional) collects the SHA-256 of each top-level class entry."""
@@ -463,20 +584,26 @@ def scan_archive(z: zipfile.ZipFile, prefix: str, hits: list, class_hashes=None)
         if info.is_dir():
             continue
         name = prefix + info.filename
-        if info.filename.endswith(".class"):
-            data = z.read(info)
-            if class_hashes is not None:
+        fn_low = info.filename.lower()
+        data = z.read(info)
+        if fn_low.endswith(".class") or is_class_magic(data):
+            if not fn_low.endswith(".class"):
+                hits.append((2, name, "disguised-class", f"{name} -> disguised Java class file (CAFEBABE header)", hashlib.sha256(data).hexdigest()))
+            if class_hashes is not None and fn_low.endswith(".class"):
                 class_hashes.append(hashlib.sha256(data).hexdigest())
             scan_class(data, name, hits)
-        elif ARCHIVE_RE.search(info.filename):
+        elif ARCHIVE_RE.search(info.filename) or is_zip_magic(data):
             try:
-                with zipfile.ZipFile(io.BytesIO(z.read(info))) as inner:
+                with zipfile.ZipFile(io.BytesIO(data)) as inner:
                     scan_archive(inner, name + "!/", hits)
             except Exception:
-                hits.append((2, name, "nested-archive", f"{name} -> nested archive could not be opened", ""))
-        elif EMBEDDED_NATIVE_RE.search(info.filename):
-            native_data = z.read(info)
+                if ARCHIVE_RE.search(info.filename):
+                    hits.append((2, name, "nested-archive", f"{name} -> nested archive could not be opened", ""))
+        elif EMBEDDED_NATIVE_RE.search(info.filename) or is_native_magic(data):
+            native_data = data
             native_hash = hashlib.sha256(native_data).hexdigest()
+            for p in scan_native_bytes(native_data, check_danger_apis=False):
+                hits.append((1, name, p, f"{name} -> embedded native/script contains '{p}'", native_hash))
             hits.append((2, name, "native", f"{name} -> embedded native binary / script", native_hash))
 
 
@@ -501,6 +628,7 @@ def select_unlisted_hits(hits: list, scope: str, file_hash: str = "", file_name:
 WORKSHOP_HASHES = {}    # sha256 -> scope of jars / native binaries inside Workshop items
 MANIFEST_FILES = {}     # normalized full path -> (sha256, scope) from install manifests
 MANIFEST_HASHES = {}    # sha256 -> scope, for recognizing manifest files repackaged into a jar
+GAME_ROOT_DIRS = set()  # normalized game root paths, for restricting game-root-only framework scopes
 
 
 def norm(path) -> str:
@@ -528,7 +656,7 @@ def get_file_scope(path) -> str:
     if np in MANIFEST_FILES:
         return MANIFEST_FILES[np][1]
     leaf = Path(path).name.lower()
-    if leaf in ("pzo_native64.dll", "libpzo_native64.so", "pzoptimengine.jar"):
+    if leaf in ("pzo_native64.dll", "libpzo_native64.so", "libpzo_native64.dylib", "pzoptimengine.jar") and norm(Path(path).parent) in GAME_ROOT_DIRS:
         return "pzo"
     try:
         h = sha256_file(path)
@@ -893,7 +1021,7 @@ def audit_pz_engine(gm_path: str, report_lines: list) -> dict:
     try:
         with zipfile.ZipFile(jar_path, 'r') as z:
             for info in z.infolist():
-                if info.filename.endswith(".class"):
+                if info.filename.lower().endswith(".class"):
                     total_classes += 1
                     parts = info.filename.split('/')
                     if parts[0].lower() not in STOCK_PZ_PACKAGES:
@@ -984,6 +1112,14 @@ class Scan:
         if n.name in KNOWN_NATIVE_FRAMEWORKS:
             expected, desc = KNOWN_NATIVE_FRAMEWORKS[n.name]
             if in_scope(scope, expected):
+                bad = []
+                try:
+                    bad = scan_native_bytes(n.read_bytes(), check_danger_apis=True)
+                except OSError:
+                    pass
+                if bad:
+                    self.finding("critical", f"[CRITICAL THREAT] Compromised Native Framework {n.name} ({n}): contains '{bad[0]}'")
+                    return
                 if n.name not in self.known_frameworks_found:
                     self.known_frameworks_found.append(n.name)
                 print(f"  {COLOR_CYAN}[KNOWN NATIVE FRAMEWORK] {n.name} ({desc}){COLOR_RESET}")
@@ -1289,6 +1425,9 @@ def main(profile=None):
         do_scan_launcher = True
 
     do_scan_game_root = do_scan_launcher or do_scan_engine
+    GAME_ROOT_DIRS.clear()
+    GAME_ROOT_DIRS.update(norm(gm) for gm in targets["GameRoot"])
+    all_lua_files = []
 
     # Collect files: one walk per folder, sorted into jars, loose classes and native binaries / scripts
     all_jars = []
@@ -1308,10 +1447,22 @@ def main(profile=None):
             elif ext == ".class":
                 if classes:
                     all_loose_classes.append(f)
+            elif ext in (".lua", ".lbc"):
+                if jars:
+                    all_lua_files.append(f)
+            elif ext == ".bin":
+                if natives and not f.name.lower().startswith(("chunkdata_", "worldmap")):
+                    try:
+                        with open(f, "rb") as fp:
+                            hdr = fp.read(64)
+                        if is_native_magic(hdr) or hdr[:2] == b"#!":
+                            mod_natives.append(f)
+                    except OSError:
+                        pass
             elif natives and norm(f) not in SELF_PATHS:
                 mod_natives.append(f)
             # Jars / native binaries / scripts inside Workshop items: byte-identical copies in a game folder inherit their scope
-            if do_scan_game_root and ext in SCAN_EXTS and get_workshop_scope(f):
+            if do_scan_game_root and (ext == ".jar" or ext in NATIVE_EXTS) and get_workshop_scope(f):
                 WORKSHOP_HASHES[sha256_file(f)] = get_workshop_scope(f)
 
     if custom_path:
@@ -1321,6 +1472,10 @@ def main(profile=None):
                 all_jars.append(cp)
             elif cp.suffix.lower() == ".class":
                 all_loose_classes.append(cp)
+            elif cp.suffix.lower() in (".lua", ".lbc"):
+                all_lua_files.append(cp)
+            elif cp.suffix.lower() in NATIVE_EXTS:
+                mod_natives.append(cp)
         else:
             add_mod_files(cp, True, True, True)
     else:
@@ -1349,6 +1504,8 @@ def main(profile=None):
         print(f"  {COLOR_DARK_CYAN}- {len(game_root_classes)} Game Folder Code Overrides (loaded ahead of projectzomboid.jar){COLOR_RESET}")
     if all_loose_classes:
         print(f"  {COLOR_DARK_CYAN}- {len(all_loose_classes)} Loose Class Overrides{COLOR_RESET}")
+    if all_lua_files:
+        print(f"  {COLOR_DARK_CYAN}- {len(all_lua_files)} Mod Lua Scripts & Bytecode{COLOR_RESET}")
     if do_scan_launcher:
         print(f"  {COLOR_DARK_CYAN}- Game Launcher Config (ProjectZomboid64.json, launcher scripts, Java environment variables){COLOR_RESET}")
     if custom_path:
@@ -1375,16 +1532,20 @@ def main(profile=None):
 
             # A.1. Launcher Audit: JSON config, launcher scripts
             if do_scan_launcher:
-                cfg_path = p_gm / "ProjectZomboid64.json"
-                if cfg_path.exists():
-                    try:
-                        cfg = json.loads(cfg_path.read_text(encoding="utf-8", errors="ignore"))
-                        scan.jvm_options(" ".join(cfg.get("vmArgs", [])), "ProjectZomboid64.json")
-                        for cp in cfg.get("classpath", []):
-                            if cp and cp != "." and cp not in STOCK_PZ_JARS:
-                                scan.finding("info", f"[i] Notice: Launcher classpath includes '{cp}' (scanned below)")
-                    except Exception:
-                        pass
+                for cfg_name in ("ProjectZomboid64.json", "ProjectZomboid32.json"):
+                    cfg_path = p_gm / cfg_name
+                    if cfg_path.exists():
+                        try:
+                            cfg = json.loads(cfg_path.read_text(encoding="utf-8", errors="ignore"))
+                            mc = str(cfg.get("mainClass", "")).strip()
+                            if mc and mc not in ("zombie.gameStates.MainScreenState", "zombie/gameStates/MainScreenState"):
+                                scan.finding("critical", f"[CRITICAL] Hijacked mainClass in {cfg_name}: {mc}")
+                            scan.jvm_options(" ".join(cfg.get("vmArgs", [])), cfg_name)
+                            for cp in cfg.get("classpath", []):
+                                if cp and cp != "." and cp not in STOCK_PZ_JARS:
+                                    scan.finding("info", f"[i] Notice: Launcher classpath includes '{cp}' (scanned below)")
+                        except Exception:
+                            pass
                 for s in LAUNCHER_SCRIPTS:
                     sp = p_gm / s
                     if sp.is_file() and sp.stat().st_size < 1_000_000:
@@ -1398,8 +1559,7 @@ def main(profile=None):
             # A.3. Audit Native Binaries in Game Root
             for n in p_gm.glob("*"):
                 if n.is_file() and n.suffix.lower() in NATIVE_EXTS and norm(n) not in SELF_PATHS:
-                    is_stock = (n.name in STOCK_DLLS or n.name in STOCK_SOS or n.name in STOCK_SCRIPTS
-                                or n.name.startswith("ProjectZomboid"))
+                    is_stock = (n.name in STOCK_DLLS or n.name in STOCK_SOS or n.name in STOCK_SCRIPTS)
                     if not is_stock:
                         scan.native_binary(n, get_file_scope(n), " in Game Root")
 
@@ -1522,6 +1682,33 @@ def main(profile=None):
             critical, warning, user_exceptions = select_unlisted_hits(hits, scope)
             scan.result(label, label, critical, warning, f"[OK] {label} clean.", user_exceptions)
 
+    # E. Scan Mod Lua Scripts & Bytecode
+    if all_lua_files:
+        print(f"\n{COLOR_GRAY}Scanning {len(all_lua_files)} Mod Lua Scripts & Bytecode...{COLOR_RESET}")
+        lua_flagged = 0
+        for idx, lf in enumerate(all_lua_files, 1):
+            if idx % 200 == 0 or idx == len(all_lua_files):
+                show_progress_bar(idx, len(all_lua_files), f"Checking Lua scripts ({idx}/{len(all_lua_files)})")
+            try:
+                data = lf.read_bytes()
+            except OSError:
+                continue
+            hits = []
+            scan_lua_bytes(data, f"{lf.parent.name}/{lf.name}", hits)
+            if hits:
+                clear_progress_bar()
+                scope = get_workshop_scope(lf)
+                lhash = hashlib.sha256(data).hexdigest()
+                exp_notice = get_expired_exception_notice(lhash, "", lf.name, "")
+                critical, warning, user_exceptions = select_unlisted_hits(hits, scope, lhash, lf.name)
+                if critical or warning or user_exceptions or exp_notice:
+                    lua_flagged += 1
+                    scan.result(lf.name, str(lf), critical, warning, f"[OK] {lf.name} clean.", user_exceptions, exp_notice, lhash)
+        clear_progress_bar()
+        if lua_flagged == 0:
+            print(f"  {COLOR_GREEN}[OK] All {len(all_lua_files)} Mod Lua scripts verified clean (0 malicious webhooks or sandbox escapes){COLOR_RESET}")
+            report_lines.append(f"  [OK] All {len(all_lua_files)} Mod Lua scripts verified clean.")
+
     # 9. Final Audit Summary
     print(f"\n{COLOR_CYAN}================================================================={COLOR_RESET}")
     print(f"{COLOR_CYAN}                        AUDIT SUMMARY                            {COLOR_RESET}")
@@ -1535,6 +1722,7 @@ def main(profile=None):
     else:
         print("Base Game Engines:     Skipped (Included in Full Deep Scan)")
     print(f"Total Mod JARs:        {len(all_jars)} Scanned")
+    print(f"Total Mod Lua Files:   {len(all_lua_files)} Scanned")
     if do_scan_game_root:
         print(f"Game Folder Overrides: {len(game_root_classes)} Scanned")
     if do_scan_loose_classes:
