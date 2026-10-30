@@ -1514,7 +1514,8 @@ function Write-ScanResult($name, $path, $res, $okLine, $expiredNotice = $null, $
         }
     } else {
         $suffix = if ($res.UserExceptions -and $res.UserExceptions.Count -gt 0) {
-            " (with $($res.UserExceptions.Count) verified user exception$([string](if ($res.UserExceptions.Count -gt 1) { 's' } else { '' })))"
+            $plural = if ($res.UserExceptions.Count -gt 1) { 's' } else { '' }
+            " (with $($res.UserExceptions.Count) verified user exception$plural)"
         } else { "" }
         Write-Host "  $okLine$suffix" -ForegroundColor $(if ($okLine.StartsWith("[KNOWN")) { "Cyan" } else { "Green" })
         $reportLines.Add("  $okLine$suffix")
