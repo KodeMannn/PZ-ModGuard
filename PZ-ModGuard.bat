@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.9.0"
+title "Project Zomboid - Java and Binary Mod Guard v2.9.1"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.9.0                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.9.1                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -409,6 +409,7 @@ $wsViewpointTW = "ws:3813908957"
 $wsViewpointTV = "ws:3821610732"
 $wsDeadWorks   = "ws:3825724093"
 $wsGridRV      = "ws:3820158673"
+$wsIsometricNoMore = "ws:3819166046"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 $knownNativeFrameworks = @{
@@ -590,6 +591,9 @@ $scopedWhitelist = @(
     # DeadWorks Vehicle Framework & GridRV: Coop host server launcher restarts GameServer with -javaagent for ZombieBuddy
     "$wsDeadWorks|*deadworks/vehicles/Launcher.class|java/lang/ProcessBuilder.start",
     "$wsGridRV|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start",
+
+    # Project Viewpoint - Isometric No More: 3D world interaction null-safety retransformation
+    "$wsIsometricNoMore|inm/NativeMenuSafety.class|java/lang/instrument/Instrumentation.retransformClasses",
 
     # PZO Engine Optimizer (prop11/PZO-Launcher): native AVX2 engine agent, GitHub updater, update dialog, mod loader
     "pzo|*com/pzoptimizer/UpdateDialog.class|powershell.exe",

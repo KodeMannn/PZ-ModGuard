@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.9.0
+Version 2.9.1
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.9.0"
+VERSION = "2.9.1"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -101,6 +101,7 @@ WS_VIEWPOINT_TW = "ws:3813908957"
 WS_VIEWPOINT_TV = "ws:3821610732"
 WS_DEADWORKS = "ws:3825724093"
 WS_GRIDRV = "ws:3820158673"
+WS_ISOMETRIC_NO_MORE = "ws:3819166046"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 KNOWN_NATIVE_FRAMEWORKS = {
@@ -279,6 +280,9 @@ SCOPED_WHITELIST = [
     # DeadWorks Vehicle Framework & GridRV: Coop host server launcher restarts GameServer with -javaagent for ZombieBuddy
     f"{WS_DEADWORKS}|*deadworks/vehicles/Launcher.class|java/lang/ProcessBuilder.start",
     f"{WS_GRIDRV}|*gridrv/HostLauncher.class|java/lang/ProcessBuilder.start",
+
+    # Project Viewpoint - Isometric No More: 3D world interaction null-safety retransformation
+    f"{WS_ISOMETRIC_NO_MORE}|inm/NativeMenuSafety.class|java/lang/instrument/Instrumentation.retransformClasses",
 
     # PZO Engine Optimizer (prop11/PZO-Launcher): native AVX2 engine agent, GitHub updater, update dialog, mod loader
     "pzo|*com/pzoptimizer/UpdateDialog.class|powershell.exe",
