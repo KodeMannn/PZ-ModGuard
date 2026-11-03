@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.9.2
+Version 2.9.3
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.9.2"
+VERSION = "2.9.3"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -160,7 +160,7 @@ TIER_1_PATTERNS = [
     "Start Menu/Programs/Startup",
     # Webhook & data exfiltration relays
     "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
-    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st"
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh/", "catbox.moe", "gofile.io", "0x0.st"
 ]
 TIER_1_LOWER = [(p, p.lower()) for p in TIER_1_PATTERNS]
 
@@ -211,7 +211,7 @@ LUA_TIER_1_PATTERNS = [
     "discord.com/api/webhooks", "discordapp.com/api/webhooks",
     "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
     "api.telegram.org", "pastebin.com/raw", "iplogger", "grabify",
-    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st",
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh/", "catbox.moe", "gofile.io", "0x0.st",
     "os.execute", "io.popen", "package.loadlib"
 ]
 LUA_TIER_1_LOWER = [(p, p.lower()) for p in LUA_TIER_1_PATTERNS]

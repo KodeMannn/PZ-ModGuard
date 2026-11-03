@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.9.2"
+title "Project Zomboid - Java and Binary Mod Guard v2.9.3"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.9.2                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.9.3                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -475,7 +475,7 @@ $tier1Patterns = @(
     "Start Menu/Programs/Startup",
     # Webhook & data exfiltration relays
     "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
-    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st"
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh/", "catbox.moe", "gofile.io", "0x0.st"
 )
 
 # Tier 2: exact field/method references ("owner.member") resolved from the constant pool...
@@ -524,7 +524,7 @@ $luaTier1Patterns = @(
     "discord.com/api/webhooks", "discordapp.com/api/webhooks",
     "canary.discord.com/api/webhooks", "ptb.discord.com/api/webhooks",
     "api.telegram.org", "pastebin.com/raw", "iplogger", "grabify",
-    "webhook.site", "pipedream.net", "requestbin", "transfer.sh", "catbox.moe", "gofile.io", "0x0.st",
+    "webhook.site", "pipedream.net", "requestbin", "transfer.sh/", "catbox.moe", "gofile.io", "0x0.st",
     "os.execute", "io.popen", "package.loadlib"
 )
 
