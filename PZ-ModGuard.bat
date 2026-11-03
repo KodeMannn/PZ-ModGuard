@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.9.3"
+title "Project Zomboid - Java and Binary Mod Guard v2.9.4"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.9.3                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.9.4                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -411,6 +411,7 @@ $wsDeadWorks   = "ws:3825724093"
 $wsGridRV      = "ws:3820158673"
 $wsIsometricNoMore = "ws:3819166046"
 $wsLivingNPC   = "ws:3820700754"
+$wsBanditsW1   = "ws:3403180543"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 $knownNativeFrameworks = @{
@@ -436,7 +437,10 @@ $knownDevScripts = @(
     "$wsLivingNPC|Start-Player2Chat-Release.cmd",
     "$wsLivingNPC|Stop-Player2Chat-Release.cmd",
     "$wsLivingNPC|Start-Player2Bridge.ps1",
-    "$wsLivingNPC|Stop-Player2Bridge.ps1"
+    "$wsLivingNPC|Stop-Player2Bridge.ps1",
+    "$wsBanditsW1|script.ps1",
+    "$wsBanditsW1|makesoundfile.ps1",
+    "$wsBanditsW1|makesoundtable.ps1"
 )
 
 function Test-InScope($scope, $scopeList) {

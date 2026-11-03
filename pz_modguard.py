@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.9.3
+Version 2.9.4
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.9.3"
+VERSION = "2.9.4"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -103,6 +103,7 @@ WS_DEADWORKS = "ws:3825724093"
 WS_GRIDRV = "ws:3820158673"
 WS_ISOMETRIC_NO_MORE = "ws:3819166046"
 WS_LIVING_NPC = "ws:3820700754"
+WS_BANDITS_W1 = "ws:3403180543"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 KNOWN_NATIVE_FRAMEWORKS = {
@@ -133,7 +134,10 @@ KNOWN_DEV_SCRIPTS = [
     f"{WS_LIVING_NPC}|Start-Player2Chat-Release.cmd",
     f"{WS_LIVING_NPC}|Stop-Player2Chat-Release.cmd",
     f"{WS_LIVING_NPC}|Start-Player2Bridge.ps1",
-    f"{WS_LIVING_NPC}|Stop-Player2Bridge.ps1"
+    f"{WS_LIVING_NPC}|Stop-Player2Bridge.ps1",
+    f"{WS_BANDITS_W1}|script.ps1",
+    f"{WS_BANDITS_W1}|makesoundfile.ps1",
+    f"{WS_BANDITS_W1}|makesoundtable.ps1"
 ]
 
 # Tier 1: matched against string literals in the class
