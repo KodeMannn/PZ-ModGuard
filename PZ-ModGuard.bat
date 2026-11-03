@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.9.1"
+title "Project Zomboid - Java and Binary Mod Guard v2.9.2"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.9.1                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.9.2                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -410,6 +410,7 @@ $wsViewpointTV = "ws:3821610732"
 $wsDeadWorks   = "ws:3825724093"
 $wsGridRV      = "ws:3820158673"
 $wsIsometricNoMore = "ws:3819166046"
+$wsLivingNPC   = "ws:3820700754"
 
 # Native binaries expected inside one Workshop item (or as a byte-identical copy of it in the game folder)
 $knownNativeFrameworks = @{
@@ -431,7 +432,11 @@ $knownDevScripts = @(
     "$wsPzOpt|Uninstall-PZ-Optimization.cmd",
     "$wsPzOpt|Uninstall-PZ-Optimization.bat",
     "$wsPzOpt|uninstall.sh",
-    "$wsViewpointTW|build.ps1"
+    "$wsViewpointTW|build.ps1",
+    "$wsLivingNPC|Start-Player2Chat-Release.cmd",
+    "$wsLivingNPC|Stop-Player2Chat-Release.cmd",
+    "$wsLivingNPC|Start-Player2Bridge.ps1",
+    "$wsLivingNPC|Stop-Player2Bridge.ps1"
 )
 
 function Test-InScope($scope, $scopeList) {
@@ -594,6 +599,11 @@ $scopedWhitelist = @(
 
     # Project Viewpoint - Isometric No More: 3D world interaction null-safety retransformation
     "$wsIsometricNoMore|inm/NativeMenuSafety.class|java/lang/instrument/Instrumentation.retransformClasses",
+
+    # LivingNPC: Co-op host server bootstrap (-agentlib:zbNative) and friendly companion LOS fear filter
+    "$wsLivingNPC|*lnpc/childvisual/HostLaunch.class|java/lang/ProcessBuilder.start",
+    "$wsLivingNPC|*lnpc/childvisual/HostLaunch.class|java/lang/instrument/Instrumentation.retransformClasses",
+    "$wsLivingNPC|*lnpc/childvisual/CompanionFearPatch.class|java/lang/instrument/Instrumentation.retransformClasses",
 
     # PZO Engine Optimizer (prop11/PZO-Launcher): native AVX2 engine agent, GitHub updater, update dialog, mod loader
     "pzo|*com/pzoptimizer/UpdateDialog.class|powershell.exe",
