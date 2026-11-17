@@ -2,7 +2,7 @@
 """
 Project Zomboid - Advanced Java & Binary Mod Guard
 Cross-Platform Core Security Scanner (Linux, SteamOS / Steam Deck, Windows, macOS)
-Version 2.9.4
+Version 2.9.5
 Discord: https://discord.gg/5rmsnwMPez
 Coded with the assistance of Google Gemini and Claude Code
 Zero external dependencies - standard library only
@@ -30,7 +30,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
-VERSION = "2.9.4"
+VERSION = "2.9.5"
 
 # ANSI Colors
 COLOR_RESET = "\033[0m"
@@ -242,13 +242,21 @@ SCOPED_WHITELIST = [
     f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/WatchesAPI.class|java/lang/instrument/Instrumentation.retransformClasses",
     f"{WS_ZOMBIEBUDDY}|me/zed_0xff/zombie_buddy/frontend/SwingApprovalMain.class|java/awt/Desktop.browse",
 
-    # Viewpoint: GPU utilization (typeperf), Shenandoah GC probe, and vendor upscaler DLL downloads (FSR/DLSS/XeSS)
+    # Viewpoint: GPU utilization (typeperf/PDH/DXGI), GC probe, vendor upscaler/Steam Audio downloads & loaders, addon framework
     f"{WS_VIEWPOINT}|viewpoint/platform/GpuBusy.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT}|viewpoint/platform/Collector.class|java/lang/ProcessBuilder.start",
     f"{WS_VIEWPOINT}|viewpoint/upscale/NativeDownload.class|java/net/URL.openConnection",
+    f"{WS_VIEWPOINT}|viewpoint/platform/Download*.class|java/net/URL.openConnection",
     f"{WS_VIEWPOINT}|viewpoint/platform/HotReload.class|java/lang/instrument/Instrumentation.redefineClasses",
     f"{WS_VIEWPOINT}|viewpoint/upscale/Natives.class|org/lwjgl/system/Library.loadNative",
     f"{WS_VIEWPOINT}|org/lwjgl/vulkan/VK.class|org/lwjgl/system/Library.loadNative",
+    f"{WS_VIEWPOINT}|viewpoint/platform/WindowsCounters.class|org/lwjgl/system/Library.loadNative",
+    f"{WS_VIEWPOINT}|viewpoint/platform/WindowsMemory.class|org/lwjgl/system/Library.loadNative",
+    f"{WS_VIEWPOINT}|viewpoint/sound/Fmod.class|org/lwjgl/system/Library.loadNative",
+    f"{WS_VIEWPOINT}|viewpoint/sound/SteamAudio.class|org/lwjgl/system/Library.loadNative",
+    f"{WS_VIEWPOINT}|viewpoint/addons/*|defineClass",
+    f"{WS_VIEWPOINT}|viewpoint/addons/*|defineHiddenClass",
+    f"{WS_VIEWPOINT}|viewpoint/addons/patch/Installer.class|java/lang/instrument/Instrumentation.retransformClasses",
 
     # Viewpoint - 3D Working TVs & Radios: video decoding engine launcher, yt-dlp playlist resolver, oEmbed title queries
     f"{WS_VIEWPOINT_TV}|*com/viewpoint/tv/TVEngineLauncher.class|java/lang/ProcessBuilder.start",

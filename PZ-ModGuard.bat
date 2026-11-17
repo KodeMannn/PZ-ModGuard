@@ -1,6 +1,6 @@
 <# :
 @echo off
-title "Project Zomboid - Java and Binary Mod Guard v2.9.4"
+title "Project Zomboid - Java and Binary Mod Guard v2.9.5"
 color 0F
 set "PZMG_SELF=%~f0"
 set "PZMG_PROFILE="
@@ -46,7 +46,7 @@ $encoding = [System.Text.Encoding]::GetEncoding("ISO-8859-1")
 Clear-Host
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "       PROJECT ZOMBOID - ADVANCED JAVA & BINARY MOD GUARD        " -ForegroundColor Cyan
-Write-Host "                        Version 2.9.4                            " -ForegroundColor DarkCyan
+Write-Host "                        Version 2.9.5                            " -ForegroundColor DarkCyan
 Write-Host "            Discord: https://discord.gg/5rmsnwMPez               " -ForegroundColor DarkGray
 Write-Host "   Coded with the assistance of Google Gemini and Claude Code    " -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -553,13 +553,21 @@ $scopedWhitelist = @(
     "$wsZombieBuddy|me/zed_0xff/zombie_buddy/WatchesAPI.class|java/lang/instrument/Instrumentation.retransformClasses",
     "$wsZombieBuddy|me/zed_0xff/zombie_buddy/frontend/SwingApprovalMain.class|java/awt/Desktop.browse",
 
-    # Viewpoint: GPU utilization (typeperf), Shenandoah GC probe, and vendor upscaler DLL downloads (FSR/DLSS/XeSS)
+    # Viewpoint: GPU utilization (typeperf/PDH/DXGI), GC probe, vendor upscaler/Steam Audio downloads & loaders, addon framework
     "$wsViewpoint|viewpoint/platform/GpuBusy.class|java/lang/ProcessBuilder.start",
     "$wsViewpoint|viewpoint/platform/Collector.class|java/lang/ProcessBuilder.start",
     "$wsViewpoint|viewpoint/upscale/NativeDownload.class|java/net/URL.openConnection",
+    "$wsViewpoint|viewpoint/platform/Download*.class|java/net/URL.openConnection",
     "$wsViewpoint|viewpoint/platform/HotReload.class|java/lang/instrument/Instrumentation.redefineClasses",
     "$wsViewpoint|viewpoint/upscale/Natives.class|org/lwjgl/system/Library.loadNative",
     "$wsViewpoint|org/lwjgl/vulkan/VK.class|org/lwjgl/system/Library.loadNative",
+    "$wsViewpoint|viewpoint/platform/WindowsCounters.class|org/lwjgl/system/Library.loadNative",
+    "$wsViewpoint|viewpoint/platform/WindowsMemory.class|org/lwjgl/system/Library.loadNative",
+    "$wsViewpoint|viewpoint/sound/Fmod.class|org/lwjgl/system/Library.loadNative",
+    "$wsViewpoint|viewpoint/sound/SteamAudio.class|org/lwjgl/system/Library.loadNative",
+    "$wsViewpoint|viewpoint/addons/*|defineClass",
+    "$wsViewpoint|viewpoint/addons/*|defineHiddenClass",
+    "$wsViewpoint|viewpoint/addons/patch/Installer.class|java/lang/instrument/Instrumentation.retransformClasses",
 
     # Viewpoint - 3D Working TVs & Radios: video decoding engine launcher, yt-dlp playlist resolver, oEmbed title queries
     "$wsViewpointTV|*com/viewpoint/tv/TVEngineLauncher.class|java/lang/ProcessBuilder.start",
